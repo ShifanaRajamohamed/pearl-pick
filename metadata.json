@@ -1,0 +1,8 @@
+{
+  "name": "PEARL PICK!",
+  "description": "AI-Powered Custom Dress Design Marketplace connecting customers with master verified tailors for bespoke fashion creations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
