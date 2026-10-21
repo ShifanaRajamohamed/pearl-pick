@@ -16,7 +16,13 @@ import {
   Check, 
   Sliders, 
   Download,
-  X
+  X,
+  Wand2,
+  RefreshCw,
+  Loader2,
+  Image as ImageIcon,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DressDesign, DressDesignVariation } from '../../types';
@@ -41,7 +47,15 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
   const [isHearted, setIsHearted] = useState<boolean>(false);
   const [showQuoteModal, setShowQuoteModal] = useState<boolean>(false);
   const [showShareToast, setShowShareToast] = useState<boolean>(false);
-  const [activeAngle, setActiveAngle] = useState<'front' | 'back' | 'side'>('front');
+  const [activeAngle, setActiveAngle] = useState<'front' | 'back' | 'side' | 'detail'>('front');
+
+  // Dynamic Gemini Image Generation State
+  const [customImages, setCustomImages] = useState<Record<string, string>>({});
+  const [showGeminiStudio, setShowGeminiStudio] = useState<boolean>(false);
+  const [geminiPrompt, setGeminiPrompt] = useState<string>('');
+  const [isGeneratingGeminiImage, setIsGeneratingGeminiImage] = useState<boolean>(false);
+  const [imageGenerationStatus, setImageGenerationStatus] = useState<string | null>(null);
+  const [imageModelUsed, setImageModelUsed] = useState<string | null>(null);
 
   const [targetBudget, setTargetBudget] = useState<number>(4999);
   const [neededByDate, setNeededByDate] = useState<string>('2026-10-15');
@@ -51,10 +65,59 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
 
   const currentVar = design.variations[selectedVarIndex] || design.variations[0];
 
-  const currentImage = 
+  const currentCustomKey = `${selectedVarIndex}-${activeAngle}`;
+  const customImage = customImages[currentCustomKey];
+
+  const currentImage = customImage || (
     activeAngle === 'back' && currentVar.backImageUrl ? currentVar.backImageUrl :
     activeAngle === 'side' && currentVar.sideImageUrl ? currentVar.sideImageUrl :
-    currentVar.frontImageUrl;
+    activeAngle === 'detail' && (currentVar.detailImageUrl || currentVar.frontImageUrl) ? (currentVar.detailImageUrl || currentVar.frontImageUrl) :
+    currentVar.frontImageUrl
+  );
+
+  const handleGenerateGeminiImage = async (customPromptToUse?: string) => {
+    setIsGeneratingGeminiImage(true);
+    setImageGenerationStatus('Synthesizing bespoke couture visual (100% Free)...');
+
+    const promptText = (customPromptToUse || geminiPrompt).trim() || 
+      `${currentVar.name || design.title}, luxury Indian haute couture fashion photography, ${activeAngle} angle view`;
+
+    const isMenDesign = design.tags?.some(t => t.toLowerCase().includes('men')) || design.id.includes('men');
+
+    try {
+      const res = await fetch('/api/gemini/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: promptText,
+          gender: isMenDesign ? 'men' : 'women',
+          angle: activeAngle,
+          dressType: currentVar.specs?.dressType || design.title,
+          color: currentVar.specs?.color || (isMenDesign ? 'Midnight Obsidian' : 'Pearl Blush'),
+          fabric: currentVar.specs?.fabric || (isMenDesign ? 'Pure Raw Silk' : 'Silk Organza'),
+          aspectRatio: '3:4'
+        })
+      });
+
+      const data = await res.json();
+      if (data && data.imageUrl) {
+        setCustomImages((prev) => ({
+          ...prev,
+          [currentCustomKey]: data.imageUrl
+        }));
+        setImageModelUsed('Free AI Visual Engine');
+        setImageGenerationStatus('Custom bespoke visual generated successfully (100% Free)!');
+        setShowGeminiStudio(false);
+      } else {
+        setImageGenerationStatus('Could not generate image. Please try another prompt.');
+      }
+    } catch (err: any) {
+      console.warn('Image generation notice:', err);
+      setImageGenerationStatus('Image request failed. Please check network connection.');
+    } finally {
+      setIsGeneratingGeminiImage(false);
+    }
+  };
 
   const handleBroadcastQuote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,26 +189,55 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
           src={currentImage}
           alt={design.title}
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover object-top"
+          className={`w-full h-full object-cover transition-transform duration-700 ${
+            activeAngle === 'detail' ? 'scale-125 object-center' : 'scale-100 object-top'
+          }`}
         />
         
         {/* Soft top gradient for text contrast */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/25 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/35 pointer-events-none" />
+
+        {/* Loading Overlay when generating image */}
+        {isGeneratingGeminiImage && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center text-white space-y-3">
+            <Loader2 className="w-8 h-8 text-[#FAF7F2] animate-spin" />
+            <div className="text-sm font-semibold tracking-wide">Synthesizing Couture Visual</div>
+            <p className="text-xs text-white/80 max-w-xs font-light">
+              Crafting photorealistic bespoke dress visual with Free AI Visual Engine...
+            </p>
+          </div>
+        )}
 
         {/* Floating title & AI Concept badge */}
         <div className="absolute top-4 left-4 right-4 text-white z-10 space-y-1.5">
-          <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-md">
-            {design.title}
-          </h1>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-[10px] font-medium tracking-wide text-white">
-            <Sparkles className="w-3 h-3 text-[#E9D4D7]" />
-            <span>AI Bespoke Concept</span>
+          <div className="flex items-start justify-between gap-2">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-md">
+              {design.title}
+            </h1>
+            <div className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md text-[10px] font-semibold text-white tracking-wide border border-white/20 shrink-0">
+              {activeAngle === 'front' && 'Front Silhouette'}
+              {activeAngle === 'back' && 'Back Tailoring'}
+              {activeAngle === 'side' && 'Side Profile'}
+              {activeAngle === 'detail' && 'Artisan Weave & Macro'}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-[10px] font-medium tracking-wide text-white">
+              <Sparkles className="w-3 h-3 text-[#E9D4D7]" />
+              <span>AI Bespoke Concept</span>
+            </div>
+            {customImage && (
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#8D2434]/80 backdrop-blur-md border border-white/30 text-[10px] font-medium text-white">
+                <Wand2 className="w-3 h-3" />
+                <span>Custom AI Render</span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Multi-angle indicator pills */}
         <div className="absolute bottom-3 right-3 flex items-center gap-1.5 z-10">
-          {(['front', 'back', 'side'] as const).map((angle) => (
+          {(['front', 'back', 'side', 'detail'] as const).map((angle) => (
             <button
               key={angle}
               onClick={() => setActiveAngle(angle)}
@@ -155,11 +247,134 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
                   : 'bg-black/40 text-white hover:bg-black/60'
               }`}
             >
-              {angle.charAt(0).toUpperCase() + angle.slice(1)}
+              {angle === 'detail' ? 'Macro Detail' : angle.charAt(0).toUpperCase() + angle.slice(1)}
             </button>
           ))}
         </div>
+
+        {/* Quick Trigger to open Free AI Studio */}
+        <button
+          onClick={() => setShowGeminiStudio(!showGeminiStudio)}
+          className="absolute bottom-3 left-3 px-3 py-1.5 rounded-full text-xs font-medium bg-black/50 hover:bg-black/70 backdrop-blur-md text-white flex items-center gap-1.5 transition-all cursor-pointer z-10 border border-white/20 shadow-xs"
+        >
+          <Wand2 className="w-3.5 h-3.5 text-[#E9D4D7]" />
+          <span>{showGeminiStudio ? 'Close Studio' : 'Free AI Image Studio'}</span>
+        </button>
       </div>
+
+      {/* FREE AI IMAGE GENERATION STUDIO DRAWER/CARD */}
+      {showGeminiStudio && (
+        <div className="bg-[#FAF7F2] rounded-2xl border border-[#8D2434]/30 p-4 space-y-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-[#8D2434] text-white flex items-center justify-center">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-[#2D2825] uppercase tracking-wider">
+                    AI Couture Image Studio
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-full bg-[#416035]/15 text-[#416035] text-[10px] font-bold">
+                    100% Free
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#7D726A]">
+                  Create or edit visuals to your exact requirements • No paid keys needed
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowGeminiStudio(false)}
+              className="p-1 rounded-full text-[#7D726A] hover:text-[#2D2825] cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2D2825] block">
+              Describe your visual requirements:
+            </label>
+            <textarea
+              value={geminiPrompt}
+              onChange={(e) => setGeminiPrompt(e.target.value)}
+              placeholder="e.g. Pure raw silk lehenga in midnight sapphire with gold zari borders, dramatic sheer organza dupatta with scalloped hand-embroidery..."
+              rows={2}
+              className="w-full text-xs bg-white rounded-xl border border-[#ECE6DE] focus:border-[#8D2434] focus:outline-none p-3 text-[#2D2825] placeholder:text-[#A89F91]"
+            />
+          </div>
+
+          {/* Quick Style / Requirement Prompts */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] uppercase font-bold text-[#7D726A] tracking-wider">
+              Quick Inspiration Prompts:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Royal Emerald Raw Silk with Zardozi Work',
+                'Deep U-Back with Heavy Kundan Latkan',
+                'Pastel Organza Gown with Pearl Constellation',
+                'Close-up Macro Shot of Hand-Embroidered Zari',
+                'Dramatic Red Carpet Trail Runway Lighting'
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => {
+                    setGeminiPrompt(suggestion);
+                    handleGenerateGeminiImage(suggestion);
+                  }}
+                  disabled={isGeneratingGeminiImage}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-[#FBECEF] hover:text-[#8D2434] border border-[#ECE6DE] text-[#2D2825] transition-colors cursor-pointer text-left"
+                >
+                  + {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => handleGenerateGeminiImage()}
+              disabled={isGeneratingGeminiImage}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-[#8D2434] hover:bg-[#781E2C] text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-60"
+            >
+              {isGeneratingGeminiImage ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Synthesizing Free Image...</span>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span>Generate Free Bespoke Visual</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setCustomImages((prev) => {
+                  const updated = { ...prev };
+                  delete updated[currentCustomKey];
+                  return updated;
+                });
+                setImageGenerationStatus('Reset to default atelier visual');
+              }}
+              className="py-2.5 px-3 rounded-xl bg-white hover:bg-black/5 text-[#7D726A] hover:text-[#2D2825] border border-[#ECE6DE] text-xs font-medium cursor-pointer transition-colors"
+              title="Reset angle image"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {imageGenerationStatus && (
+            <div className="p-2 rounded-lg bg-white border border-[#ECE6DE] text-[11px] text-[#7D726A] flex items-center gap-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#416035] shrink-0" />
+              <span>{imageGenerationStatus}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 3. GARMENT SPECIFICATIONS & CONCEPT CARD */}
       <div className="bg-white rounded-2xl border border-[#ECE6DE] p-5 shadow-2xs space-y-4">

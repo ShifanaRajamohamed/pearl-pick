@@ -256,6 +256,7 @@ export const PROMPT_SUGGESTIONS = [
 
 export const INITIAL_MEASUREMENTS: MeasurementSheet = {
   unit: 'inches',
+  genderCategory: 'all',
   bust: 35.0,
   waist: 28.0,
   highHip: 36.0,
@@ -274,8 +275,20 @@ export const INITIAL_MEASUREMENTS: MeasurementSheet = {
   backNeckDepth: 9.5,
   lehengaLength: 42.0,
   churidarLength: 40.0,
+  // Men's Bespoke Measurement Defaults
+  chest: 40.0,
+  jacketLength: 30.5,
+  collarSize: 16.0,
+  shoulderWidth: 18.0,
+  trouserWaist: 33.0,
+  trouserInseam: 31.5,
+  trouserOutseam: 41.0,
+  seatHip: 40.0,
+  thighCircumference: 24.0,
+  trouserBottomOpening: 15.0,
+  postureProfile: 'Normal Posture',
   fitPreference: 'Tailored / Regular',
-  postureNotes: 'Leave 2-inch side margin inside blouse/choli for future alterations. Padded cups desired.',
+  postureNotes: 'Bespoke fit allowance: Leave 2-inch side margin inside coat/choli for future alterations.',
   updatedAt: '2026-08-20T10:30:00Z',
 };
 
@@ -538,10 +551,200 @@ export const INITIAL_TAILORS: TailorProfile[] = [
     certifications: ['Rajasthan Heritage Craft Society Master'],
     reviews: [],
     portfolio: []
+  },
+  {
+    id: 'tailor-singhania',
+    userId: 'user-tailor-singhania',
+    name: 'Master R. K. Singhania & Sons',
+    shopName: 'Singhania & Sons Bespoke Tailors (Est. 1968)',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
+    city: 'New Delhi',
+    state: 'Delhi NCR',
+    country: 'India',
+    distanceKm: 2.1,
+    experienceYears: 42,
+    verificationStatus: 'VERIFIED',
+    verifiedAt: '2024-08-10',
+    rating: 4.98,
+    reviewCount: 460,
+    completedOrders: 1250,
+    specialties: ["Men's Bespoke Suiting", 'Royal Jodhpuri Bandhgalas', 'Savile Row Floating Canvas', 'Silk Velvet Tuxedos'],
+    bio: 'Historic Connaught Place tailoring house recognized for hand-canvassed Savile Row suits, royal Jodhpuri bandhgalas, and Italian Super 150s bespoke tailoring.',
+    badge: 'Master Artisan',
+    startingPrice: 24000,
+    averageTurnaroundDays: 14,
+    shopAddress: 'F-Block, Inner Circle, Connaught Place, New Delhi - 110001',
+    phone: '+91 98100 88234',
+    equipment: ['Floating Horsehair Canvas Press', 'High-Tension Baste Machine', 'German Hand-Stitch Rig'],
+    certifications: ['British Bespoke Tailors Guild Associate', 'Master Cutter Federation of India'],
+    reviews: [],
+    portfolio: [
+      {
+        id: 'port-singhania-1',
+        title: 'Midnight Obsidian Royal Bandhgala',
+        category: "Men's Couture",
+        imageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 14,
+        price: 38000,
+        description: 'Pure raw silk with antique gold zardozi embroidered mandarin collar, lion crest buttons, and bespoke Jodhpur breeches.',
+        customerRating: 5.0
+      },
+      {
+        id: 'port-singhania-2',
+        title: 'Bordeaux Silk Velvet Dinner Suit',
+        category: "Men's Black Tie",
+        imageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 12,
+        price: 45000,
+        description: 'Silk velvet evening jacket with Duchess satin peak lapels, double-breasted vest, and grosgrain tailored trousers.',
+        customerRating: 4.95
+      }
+    ]
+  },
+  {
+    id: 'tailor-salim-chishti',
+    userId: 'user-tailor-salim',
+    name: 'Darzi-e-Khaas by Ustad Salim Chishti',
+    shopName: 'Atelier Salim Chishti Awadh (Est. 1982)',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&auto=format&fit=crop&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=1000&auto=format&fit=crop&q=80',
+    city: 'Lucknow',
+    state: 'Uttar Pradesh',
+    country: 'India',
+    distanceKm: 4.9,
+    experienceYears: 38,
+    verificationStatus: 'VERIFIED',
+    verifiedAt: '2024-10-05',
+    rating: 4.96,
+    reviewCount: 310,
+    completedOrders: 920,
+    specialties: ['Royal Sherwanis', 'Hand Chikankari Kurtas', 'Zardozi Safas & Stoles', 'Bespoke Achkans'],
+    bio: 'Renowned Aminabad royal couturier crafting regal sherwanis with pure gold dabka, Lucknowi shadow work, and heritage angrakha plackets for grooms across India.',
+    badge: 'Master Artisan',
+    startingPrice: 19500,
+    averageTurnaroundDays: 16,
+    shopAddress: 'Nazirabad Chowk, Aminabad, Lucknow - 226018',
+    phone: '+91 94150 99441',
+    equipment: ['Traditional Awadhi Addas', 'Natural Indigo Dye Vats', 'Fine Needles No. 12'],
+    certifications: ['Uttar Pradesh Handloom Board Master Award'],
+    reviews: [],
+    portfolio: [
+      {
+        id: 'port-salim-1',
+        title: 'Ivory Awadh Hand-Embroidered Sherwani',
+        category: "Men's Royal Wedding",
+        imageUrl: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 18,
+        price: 52000,
+        description: 'Mulberry raw silk sherwani featuring 200,000 hand-sewn resham stitches, freshwater seed pearls, and chanderi stole.',
+        customerRating: 5.0
+      }
+    ]
   }
 ];
 
 export const INITIAL_DESIGNS: DressDesign[] = [
+  {
+    id: 'design-men-bandhgala',
+    customerId: 'cust-1',
+    customerName: 'Ananya Verma',
+    title: 'The Royal Rajputana Jodhpuri Bandhgala',
+    prompt: 'Midnight obsidian pure raw silk bandhgala jacket with hand-embroidered antique gold zardozi mandarin collar, lion-crest brass buttons, floating canvas chest, and tailored jodhpur breeches.',
+    createdAt: '2026-09-10T14:00:00Z',
+    isFavorite: true,
+    selectedVariationIndex: 0,
+    tags: ['Menswear', 'Bandhgala', 'Royal', 'Raw Silk', 'Bespoke', 'Groom'],
+    variations: [
+      {
+        id: 'var-men-bandhgala-1',
+        name: 'Royal Rajputana Obsidian Bandhgala',
+        tagline: 'Imperial raw silk bandhgala with antique dabka zardozi needlework and bespoke breeches.',
+        frontImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
+        backImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
+        sideImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
+        detailImageUrl: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80',
+        fabricDetails: {
+          primary: 'Pure Banarasi Raw Silk & Floating Horsehair Canvas',
+          lining: 'Cupro Breathable Anti-Static Lining',
+          embellishments: '24K gold dabka collar embroidery, bespoke brass lion-crest buttons',
+          estimatedYards: 5.5,
+          recommendedWeightGsm: 340
+        },
+        tailorNotes: [
+          'Hand-basted full horsehair canvas chest piece for lasting sculptural drape.',
+          'Mandarin collar reinforced with Japanese collar canvas for upright regal posture.',
+          'Twin side vents with 2-inch interior seam allowance on chest and waist.',
+          'Tapered Jodhpur trousers with concealed inner ankle zips and horn buttons.'
+        ],
+        stylingTips: [
+          'Pair with an antique pocket square, uncut emerald brooch, and velvet juttis.',
+          'Ideal for royal wedding baraat, reception gala, and festive evening ceremonies.'
+        ],
+        colorPsychology: 'Midnight Obsidian communicates sovereign dignity, authority, and classical luxury.',
+        estimatedCraftTimeDays: 14,
+        estimatedPriceRange: { min: 32000, max: 48000, currency: 'INR' },
+        specs: {
+          dressType: 'Royal Jodhpuri Bandhgala',
+          occasion: 'Groom & Royal Baraat',
+          fabric: 'Pure Raw Silk',
+          color: 'Kashi Midnight Obsidian',
+          sleeve: 'French Tailored Cuffs',
+          neckline: 'Mandarin Bandhgala',
+          pattern: 'Hand Zardozi & Dabka Gold'
+        }
+      }
+    ]
+  },
+  {
+    id: 'design-men-tuxedo',
+    customerId: 'cust-1',
+    customerName: 'Ananya Verma',
+    title: 'Savile Row Bordeaux Velvet Dinner Suit',
+    prompt: 'Bespoke 3-piece tuxedo in deep Bordeaux wine silk velvet, lustrous silk satin peak lapels, tailored grosgrain side-stripe trousers, and floating horsehair canvas interior.',
+    createdAt: '2026-09-08T11:00:00Z',
+    isFavorite: false,
+    selectedVariationIndex: 0,
+    tags: ['Menswear', 'Tuxedo', 'Black Tie', 'Velvet', 'Savile Row', 'Red Carpet'],
+    variations: [
+      {
+        id: 'var-men-tuxedo-1',
+        name: 'Bordeaux Velvet Peak Lapel Tuxedo',
+        tagline: 'Deep wine velvet dinner jacket featuring silk satin peak lapels and tailored evening trousers.',
+        frontImageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
+        backImageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
+        sideImageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
+        detailImageUrl: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80',
+        fabricDetails: {
+          primary: 'Italian Silk Velvet (420 GSM) with Duchess Satin Facing',
+          lining: 'Bemberg Silk Jacquard',
+          embellishments: 'Satin silk covered buttons, AMF hand-pick lapel stitching',
+          estimatedYards: 6.0,
+          recommendedWeightGsm: 420
+        },
+        tailorNotes: [
+          'Single-button stance with hand-rolled satin peak lapel.',
+          'Full floating canvas with natural horsehair chest felt.',
+          'Trousers feature high-rise waistband with side adjusters and satin side braid.'
+        ],
+        stylingTips: [
+          'Pair with a pleated Egyptian cotton shirt, silk bow tie, and patent leather oxfords.'
+        ],
+        colorPsychology: 'Bordeaux wine velvet radiates warmth, sophisticated confidence, and evening opulence.',
+        estimatedCraftTimeDays: 12,
+        estimatedPriceRange: { min: 38000, max: 55000, currency: 'INR' },
+        specs: {
+          dressType: 'Savile Row 3-Piece Tuxedo',
+          occasion: 'Black Tie Gala & Red Carpet',
+          fabric: 'Silk Velvet',
+          color: 'Bordeaux Wine Velvet',
+          sleeve: 'French Tailored Cuffs',
+          neckline: 'Mandarin Collar',
+          pattern: 'Minimalist Clean Monochrome'
+        }
+      }
+    ]
+  },
   {
     id: 'design-pearl-blush',
     customerId: 'cust-1',
@@ -558,8 +761,9 @@ export const INITIAL_DESIGNS: DressDesign[] = [
         name: 'Pastel silk organza gown',
         tagline: 'A soft bridal silhouette with a hand-finished pearl constellation and a fluid train.',
         frontImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        backImageUrl: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=1000&auto=format&fit=crop&q=80',
+        backImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
         sideImageUrl: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=1000&auto=format&fit=crop&q=80',
+        detailImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
         fabricDetails: {
           primary: 'Pure Silk Organza with Mulmul Underlay',
           lining: 'Breathable Silk Crepe',
@@ -608,8 +812,9 @@ export const INITIAL_DESIGNS: DressDesign[] = [
         name: 'The Maharani 16-Kali Kalidar',
         tagline: 'Sculpted sweetheart choli with 16-panel hand-worked raw silk skirt & double can-can',
         frontImageUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=900&auto=format&fit=crop&q=80',
-        backImageUrl: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=900&auto=format&fit=crop&q=80',
-        sideImageUrl: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=900&auto=format&fit=crop&q=80',
+        backImageUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=900&auto=format&fit=crop&q=80',
+        sideImageUrl: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=900&auto=format&fit=crop&q=80',
+        detailImageUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=900&auto=format&fit=crop&q=80',
         fabricDetails: {
           primary: 'Pure Raw Silk (Bangalore Weave 360 GSM)',
           lining: 'Pure Cotton Mulmul for comfort + Satin Interlining',
@@ -975,13 +1180,16 @@ export const INITIAL_ANALYTICS: AnalyticsSummary = {
 
 export const HOME_CATEGORIES = [
   { id: 'cat-lehengas', name: 'Lehengas', dressType: 'Bridal Lehenga & Choli', image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80', count: '180+ Designs' },
+  { id: 'cat-bandhgalas', name: 'Royal Bandhgalas', dressType: 'Royal Jodhpuri Bandhgala', image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600&auto=format&fit=crop&q=80', count: '46+ Designs' },
+  { id: 'cat-tuxedos', name: 'Savile Row Tuxedos', dressType: 'Savile Row 3-Piece Tuxedo', image: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=600&auto=format&fit=crop&q=80', count: '38+ Designs' },
+  { id: 'cat-sherwanis', name: 'Royal Sherwanis', dressType: 'Royal Sherwani & Churidar', image: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=600&auto=format&fit=crop&q=80', count: '52+ Designs' },
+  { id: 'cat-bundis', name: 'Nehru Jackets & Kurtas', dressType: 'Embroidered Kurta & Bundi Jacket', image: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=600&auto=format&fit=crop&q=80', count: '65+ Designs' },
   { id: 'cat-anarkalis', name: 'Anarkalis', dressType: 'Royal Anarkali Suit', image: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop&q=80', count: '124+ Designs' },
   { id: 'cat-gowns', name: 'Couture Gowns', dressType: 'A-Line Evening Gown', image: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=600&auto=format&fit=crop&q=80', count: '96+ Designs' },
   { id: 'cat-sarees', name: 'Saree Gowns', dressType: 'Kanjeevaram Saree Gown', image: 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?w=600&auto=format&fit=crop&q=80', count: '85+ Designs' },
   { id: 'cat-shararas', name: 'Shararas & Ghararas', dressType: 'Sharara & Gharara Set', image: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=600&auto=format&fit=crop&q=80', count: '72+ Designs' },
   { id: 'cat-indowestern', name: 'Indo-Western', dressType: 'Indo-Western Lehanga', image: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=600&auto=format&fit=crop&q=80', count: '64+ Designs' },
   { id: 'cat-corset', name: 'Corset Dresses', dressType: 'Corset Tiered Dress', image: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600&auto=format&fit=crop&q=80', count: '48+ Designs' },
-  { id: 'cat-sherwanis', name: 'Royal Sherwanis', dressType: 'Royal Sherwani & Churidar', image: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=600&auto=format&fit=crop&q=80', count: '52+ Designs' },
 ];
 
 export const POPULAR_COLLECTIONS = [
@@ -1447,6 +1655,90 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       length: 'Floor Length (56")',
       washCare: 'Dry Clean Only',
       work: 'Hand-sewn Freshwater Seed Pearls'
+    }
+  },
+  {
+    id: 'prod-men-bandhgala',
+    title: 'The Royal Rajputana Raw Silk Bandhgala',
+    category: 'ready-to-wear',
+    categoryLabel: "Men's Bespoke",
+    designerName: 'Master R. K. Singhania & Sons',
+    designerAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+    price: 32000,
+    originalPrice: 38000,
+    images: [
+      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80'
+    ],
+    sizes: ['38 Regular', '40 Regular', '42 Regular', 'Bespoke to Measure'],
+    fabric: 'Pure Banarasi Raw Silk & Floating Canvas',
+    description: 'Impeccably structured Bandhgala coat in midnight obsidian raw silk with hand-embroidered antique gold collar, brass monogram buttons, and tapered Jodhpur breeches.',
+    rating: 4.96,
+    reviewCount: 38,
+    tags: ["Men's Bespoke", 'Bandhgala', 'Raw Silk', 'Royal'],
+    inStock: true,
+    leadTimeDays: 5,
+    specs: {
+      color: 'Midnight Obsidian & Antique Gold',
+      length: 'Coat 30", Trouser 41"',
+      washCare: 'Dry Clean Only',
+      work: 'Hand Zardozi Collar & Crest Buttons'
+    }
+  },
+  {
+    id: 'prod-men-tuxedo',
+    title: 'Savile Row Bordeaux Silk Velvet Tuxedo',
+    category: 'featured',
+    categoryLabel: "Men's Black Tie",
+    designerName: 'Singhania & Sons Bespoke',
+    designerAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+    price: 42000,
+    originalPrice: 50000,
+    images: [
+      'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80'
+    ],
+    sizes: ['38 Regular', '40 Regular', '42 Regular', 'Bespoke to Measure'],
+    fabric: 'Dense Silk Velvet (420 GSM) & Duchess Satin',
+    description: 'Full floating horsehair canvas dinner jacket with satin silk peak lapels, double-breasted vest, and tailored trousers with satin side piping.',
+    rating: 4.94,
+    reviewCount: 26,
+    tags: ["Men's Bespoke", 'Tuxedo', 'Black Tie', 'Velvet'],
+    inStock: true,
+    leadTimeDays: 7,
+    specs: {
+      color: 'Bordeaux Velvet & Black Satin',
+      length: 'Jacket 30.5", Inseam 32"',
+      washCare: 'Specialist Velvet Dry Clean',
+      work: 'Hand-Rolled Peak Lapels & AMF Stitching'
+    }
+  },
+  {
+    id: 'prod-men-bundi',
+    title: 'Artisan Banarasi Brocade Bundi & Kurta Set',
+    category: 'ready-to-wear',
+    categoryLabel: "Men's Festive",
+    designerName: 'Darzi-e-Khaas by Salim Chishti',
+    designerAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&auto=format&fit=crop&q=80',
+    price: 16500,
+    originalPrice: 19500,
+    images: [
+      'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=1000&auto=format&fit=crop&q=80'
+    ],
+    sizes: ['S (38)', 'M (40)', 'L (42)', 'XL (44)', 'Custom Fit'],
+    fabric: 'Banarasi Brocade & Egyptian Giza Cotton',
+    description: 'Golden ochre handwoven brocade Nehru jacket with real mother-of-pearl buttons paired with a breathable fine cotton kurta and churidar pants.',
+    rating: 4.89,
+    reviewCount: 31,
+    tags: ["Men's Bespoke", 'Nehru Jacket', 'Festive', 'Kurta Pajama'],
+    inStock: true,
+    leadTimeDays: 3,
+    specs: {
+      color: 'Golden Ochre & Ivory',
+      length: 'Jacket 28", Kurta 42"',
+      washCare: 'Dry Clean for Bundi, Gentle Wash for Kurta',
+      work: 'Fine Zari Weave & Mother of Pearl'
     }
   }
 ];

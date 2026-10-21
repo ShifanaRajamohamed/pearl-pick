@@ -20,6 +20,7 @@ interface MarketplaceViewProps {
   onBuyNow: (product: MarketplaceProduct, selectedSize: string) => void;
   onChatSeller: (designerName: string, product: MarketplaceProduct) => void;
   onRequestCustomStitch?: (product: MarketplaceProduct) => void;
+  gender?: 'women' | 'men';
 }
 
 export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
@@ -28,9 +29,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   onToggleWishlist,
   onBuyNow,
   onChatSeller,
-  onRequestCustomStitch
+  onRequestCustomStitch,
+  gender = 'women'
 }) => {
-  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [activeFilter, setActiveFilter] = useState<string>(gender === 'men' ? 'mens-bespoke' : 'all');
   const [selectedProduct, setSelectedProduct] = useState<MarketplaceProduct | null>(null);
   const [selectedSize, setSelectedSize] = useState<string>('M');
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
@@ -38,15 +40,23 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
 
   const filterChips = [
     { id: 'all', label: 'All' },
+    { id: 'mens-bespoke', label: "Men's Bespoke" },
+    { id: 'womens-couture', label: "Women's Couture" },
     { id: 'ready-to-wear', label: 'Ready to wear' },
     { id: 'limited-edition', label: 'Limited edition' },
-    { id: 'under-1999', label: 'Under ₹1999' },
+    { id: 'under-25000', label: 'Under ₹25,000' },
   ];
 
   const filteredProducts = products.filter((p) => {
+    if (activeFilter === 'mens-bespoke') {
+      return p.tags.some(t => t.toLowerCase().includes('men') || t.toLowerCase().includes('bandhgala') || t.toLowerCase().includes('tuxedo') || t.toLowerCase().includes('kurta')) || p.categoryLabel.toLowerCase().includes('men');
+    }
+    if (activeFilter === 'womens-couture') {
+      return !p.tags.some(t => t.toLowerCase().includes('men') || t.toLowerCase().includes('bandhgala') || t.toLowerCase().includes('tuxedo')) && !p.categoryLabel.toLowerCase().includes('men');
+    }
     if (activeFilter === 'ready-to-wear') return p.category === 'ready-to-wear' || p.tags.includes('Ready to wear');
     if (activeFilter === 'limited-edition') return p.category === 'limited-edition' || p.tags.includes('Limited edition');
-    if (activeFilter === 'under-1999') return p.price < 2000;
+    if (activeFilter === 'under-25000') return p.price < 25000;
     return true;
   });
 

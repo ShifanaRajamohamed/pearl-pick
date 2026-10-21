@@ -9,25 +9,34 @@ import {
   Truck,
   Sparkles,
   Camera,
-  X
+  X,
+  Printer,
+  FileText,
+  Award
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Order, Review } from '../../types';
+import { PrintableOrderSummary } from './PrintableOrderSummary';
+import { fireCelebrationConfetti, SuccessCelebrationOverlay } from '../Common/SuccessCelebrationOverlay';
 
 interface OrderTrackingViewProps {
   orders: Order[];
   onOpenChat: (tailorId: string, tailorName: string) => void;
   onSubmitReview: (orderId: string, tailorId: string, review: Omit<Review, 'id' | 'createdAt'>) => void;
+  onConfirmDelivery?: (orderId: string) => void;
 }
 
 export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   orders,
   onOpenChat,
   onSubmitReview,
+  onConfirmDelivery,
 }) => {
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
   const [filterTab, setFilterTab] = useState<'ACTIVE' | 'COMPLETED'>('ACTIVE');
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [showDeliveryCelebration, setShowDeliveryCelebration] = useState<boolean>(false);
   
   // Review form states
   const [ratingFit, setRatingFit] = useState<number>(5);
@@ -45,6 +54,15 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
 
   const currentOrder = displayedOrders.find((o) => o.id === selectedOrderId) || displayedOrders[0] || orders[0];
   const activeVariation = currentOrder?.variation || currentOrder?.design;
+
+  const handleConfirmDeliveryClick = () => {
+    if (!currentOrder) return;
+    if (onConfirmDelivery) {
+      onConfirmDelivery(currentOrder.id);
+    }
+    setShowDeliveryCelebration(true);
+    fireCelebrationConfetti();
+  };
 
   const handleReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,12 +82,8 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     });
 
     setShowReviewModal(false);
-    confetti({
-      particleCount: 70,
-      spread: 60,
-      origin: { y: 0.6 },
-      colors: ['#8D2434', '#D4AF37', '#2D2825']
-    });
+    setShowDeliveryCelebration(true);
+    fireCelebrationConfetti();
   };
 
   if (orders.length === 0) {
@@ -155,8 +169,8 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           {/* Main Order Card */}
           <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-5 shadow-2xs space-y-4">
             
-            {/* Header: Order ID & Status */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#F4EFEA]">
+            {/* Header: Order ID, Status & Print Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#F4EFEA] gap-2.5">
               <div>
                 <span className="text-[11px] font-mono font-medium text-[#8E847D] block">
                   Order #{currentOrder.id}
@@ -166,13 +180,29 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                 </span>
               </div>
 
-              <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-[#FBECEF] text-[#8D2434] border border-[#F2D1D7]">
-                {currentOrder.status === 'DELIVERED' 
-                  ? 'Delivered' 
-                  : currentOrder.status === 'IN_PRODUCTION' 
-                  ? 'In Production' 
-                  : 'Active Tailoring'}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  id="print-order-summary-header-btn"
+                  onClick={() => setShowPrintModal(true)}
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold bg-[#FAF7F2] hover:bg-[#ECE6DE] text-[#2D2825] border border-[#ECE6DE] flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Generate Printable PDF Summary"
+                >
+                  <Printer className="w-3.5 h-3.5 text-[#8D2434]" />
+                  <span>Print Order Summary</span>
+                </button>
+
+                <span className={`text-[11px] font-semibold px-3 py-1 rounded-full border ${
+                  currentOrder.status === 'DELIVERED' 
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                    : 'bg-[#FBECEF] text-[#8D2434] border-[#F2D1D7]'
+                }`}>
+                  {currentOrder.status === 'DELIVERED' 
+                    ? '✓ Delivered' 
+                    : currentOrder.status === 'IN_PRODUCTION' 
+                    ? 'In Production' 
+                    : 'Active Tailoring'}
+                </span>
+              </div>
             </div>
 
             {/* Garment Preview Details */}
@@ -208,13 +238,23 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
             </div>
 
             {/* Action Bar */}
-            <div className="flex items-center gap-2 pt-3 border-t border-[#F4EFEA]">
+            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[#F4EFEA]">
               <button
                 onClick={() => onOpenChat(currentOrder.tailorId, currentOrder.tailorName)}
-                className="flex-1 py-2.5 px-4 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] hover:bg-[#F4EFEA] text-xs font-semibold text-[#2D2825] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="flex-1 py-2.5 px-3 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] hover:bg-[#F4EFEA] text-xs font-semibold text-[#2D2825] flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-w-[120px]"
               >
                 <MessageCircle className="w-3.5 h-3.5 text-[#8D2434]" />
                 <span>Message Tailor</span>
+              </button>
+
+              <button
+                id="print-order-summary-action-btn"
+                onClick={() => setShowPrintModal(true)}
+                className="py-2.5 px-3.5 rounded-full bg-white border border-[#ECE6DE] hover:border-[#8D2434] text-xs font-semibold text-[#2D2825] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-[#8D2434]" />
+                <span className="hidden sm:inline">Print Order Summary</span>
+                <span className="sm:hidden">Print</span>
               </button>
 
               {currentOrder.status === 'DELIVERED' ? (
@@ -225,12 +265,13 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                   Write Review
                 </button>
               ) : (
-                <div className="px-3 py-1.5 text-right">
-                  <span className="text-[10px] text-[#8E847D] block">Est. Delivery</span>
-                  <span className="text-xs font-bold text-[#2D2825]">
-                    {currentOrder.estimatedDeliveryDate || 'Sep 22, 2026'}
-                  </span>
-                </div>
+                <button
+                  onClick={handleConfirmDeliveryClick}
+                  className="py-2.5 px-4 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Confirm Delivery & Fit</span>
+                </button>
               )}
             </div>
 
@@ -422,6 +463,38 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
 
           </div>
         </div>
+      )}
+
+      {/* Printable Order Summary PDF Modal */}
+      {currentOrder && (
+        <PrintableOrderSummary
+          order={currentOrder}
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+        />
+      )}
+
+      {/* Delivery Success Celebration Overlay with Confetti */}
+      {currentOrder && (
+        <SuccessCelebrationOverlay
+          isOpen={showDeliveryCelebration}
+          type="DELIVERED"
+          orderId={currentOrder.id}
+          garmentTitle={activeVariation?.name || 'Bespoke Haute Couture Dress'}
+          tailorName={currentOrder.tailorName}
+          amount={Number(currentOrder.totalAmount || 38000)}
+          onClose={() => setShowDeliveryCelebration(false)}
+          onPrimaryAction={() => {
+            setShowDeliveryCelebration(false);
+            setShowReviewModal(true);
+          }}
+          primaryActionLabel="Write Tailor Review"
+          onSecondaryAction={() => {
+            setShowDeliveryCelebration(false);
+            setShowPrintModal(true);
+          }}
+          secondaryActionLabel="Print Order Summary (PDF)"
+        />
       )}
 
     </div>

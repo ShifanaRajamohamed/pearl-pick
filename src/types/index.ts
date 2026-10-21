@@ -14,6 +14,8 @@ export interface AuthUser {
 
 export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 
+export type GenderCategory = 'women' | 'men' | 'all';
+
 export type DressType = 
   | 'Bridal Lehenga & Choli'
   | 'Royal Anarkali Suit'
@@ -25,6 +27,12 @@ export type DressType =
   | 'Haldi & Mehendi Sharara'
   | 'Sharara & Gharara Set'
   | 'Royal Sherwani & Churidar'
+  | 'Royal Jodhpuri Bandhgala'
+  | 'Savile Row 3-Piece Tuxedo'
+  | 'Embroidered Kurta & Bundi Jacket'
+  | 'Italian Double-Breasted Blazer'
+  | 'Designer Indo-Western Achkan'
+  | 'Luxury Linen Safari Suit'
   | 'Embroidered Kurta Pajama'
   | 'A-Line Evening Gown'
   | 'Mermaid Silhouette'
@@ -45,11 +53,14 @@ export type Occasion =
   | 'Festive & Diwali Gala'
   | 'Festive Puja & Diwali'
   | 'Bridal & Wedding'
+  | 'Groom & Royal Baraat'
+  | 'Black Tie Gala & Red Carpet'
   | 'Red Carpet & Gala'
   | 'Cocktail Soirée'
   | 'Festive & Celebration'
   | 'Prom & Graduation'
   | 'High Tea & Garden Party'
+  | 'Diplomatic & Corporate Luxury'
   | 'Corporate Luxury';
 
 export type FabricType = 
@@ -154,6 +165,7 @@ export interface DressDesignVariation {
   frontImageUrl: string;
   backImageUrl?: string;
   sideImageUrl?: string;
+  detailImageUrl?: string;
   fabricDetails: {
     primary: string;
     lining: string;
@@ -313,7 +325,9 @@ export interface OrderMilestone {
 export interface MeasurementSheet {
   id?: string;
   customerId?: string;
+  genderCategory?: GenderCategory;
   unit: 'inches' | 'cm';
+  // Universal / Women's core
   bust: number;
   waist: number;
   highHip: number;
@@ -332,6 +346,18 @@ export interface MeasurementSheet {
   backNeckDepth?: number;
   lehengaLength?: number;
   churidarLength?: number;
+  // Men's Bespoke Specific Measurements
+  chest?: number;
+  jacketLength?: number;
+  collarSize?: number;
+  shoulderWidth?: number;
+  trouserWaist?: number;
+  trouserInseam?: number;
+  trouserOutseam?: number;
+  seatHip?: number;
+  thighCircumference?: number;
+  trouserBottomOpening?: number;
+  postureProfile?: 'Normal Posture' | 'Athletic (Broad Shoulders)' | 'Erect Stance' | 'Forward Leaning';
   fitPreference: 'Snug' | 'Tailored / Regular' | 'Relaxed / Flowing';
   postureNotes?: string;
   updatedAt: string;

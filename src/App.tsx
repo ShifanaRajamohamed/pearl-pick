@@ -79,8 +79,24 @@ export default function App() {
   // Navigation & Role State
   const [currentRole, setCurrentRole] = useState<UserRole>('customer');
   const [activeTab, setActiveTab] = useState<string>('home');
+  const [gender, setGender] = useState<'women' | 'men'>('women');
   const [isMobileFrame, setIsMobileFrame] = useState<boolean>(true);
   const [showDocs, setShowDocs] = useState<boolean>(false);
+
+  const handleGenderChange = (newGender: 'women' | 'men') => {
+    setGender(newGender);
+    if (activeDesign) {
+      const isCurrentMen = activeDesign.tags.some((t) => t.toLowerCase().includes('men')) || activeDesign.id.includes('men');
+      if ((newGender === 'men' && !isCurrentMen) || (newGender === 'women' && isCurrentMen)) {
+        const matchingDesign = designs.find((d) => 
+          newGender === 'men' 
+            ? (d.tags.some((t) => t.toLowerCase().includes('men')) || d.id.includes('men'))
+            : (!d.id.includes('men') && !d.tags.some((t) => t.toLowerCase().includes('men')))
+        );
+        setActiveDesign(matchingDesign || null);
+      }
+    }
+  };
 
   // Domain State
   const [designs, setDesigns] = useState<DressDesign[]>(INITIAL_DRESS_DESIGNS);
@@ -403,6 +419,21 @@ export default function App() {
     );
   };
 
+  const handleConfirmOrderDelivery = (orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'DELIVERED',
+              escrowStatus: 'RELEASED'
+            }
+          : o
+      )
+    );
+    offlineSyncManager.enqueue('ORDER_UPDATED', `Order #${orderId} verified and delivered`, { orderId, status: 'DELIVERED' });
+  };
+
   const handleSendMessage = (content: string, type: 'TEXT' | 'IMAGE' | 'MEASUREMENT_CARD' | 'FABRIC_SWATCH' = 'TEXT') => {
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -583,22 +614,30 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F4EE] text-[#2D2825] font-sans selection:bg-[#E9D4D7] selection:text-[#4A3728] sm:py-6">
-      {/* Outer Shell Wrapper (Mobile Frame) */}
-      <div className={isMobileFrame ? 'max-w-md mx-auto min-h-screen sm:min-h-[860px] sm:rounded-[36px] shadow-2xl border-x sm:border border-[#EBE5DF] bg-[#FAF7F2] relative overflow-hidden flex flex-col justify-between' : 'w-full'}>
+    <div className={`min-h-screen bg-[#F7F4EE] text-[#2D2825] font-sans selection:bg-[#E9D4D7] selection:text-[#4A3728] ${isMobileFrame ? 'sm:py-6 sm:px-4 flex items-center justify-center' : ''}`}>
+      {/* Outer Shell Wrapper (Adaptive Mobile Frame or Full Desktop) */}
+      <div 
+        className={
+          isMobileFrame 
+            ? 'w-full max-w-md min-h-screen sm:min-h-[840px] sm:max-h-[92vh] sm:rounded-[36px] shadow-2xl border-x sm:border-[6px] sm:border-[#2D2825] bg-[#FAF7F2] relative overflow-hidden flex flex-col justify-between transition-all' 
+            : 'w-full min-h-screen bg-[#FAF7F2] flex flex-col justify-between transition-all'
+        }
+      >
         
-        {/* Mobile Phone Simulated Status Bar */}
-        <div className="flex items-center justify-between px-6 pt-3 pb-1 text-[#2D2825] select-none text-xs font-semibold shrink-0">
-          <span>9:41</span>
-          <div className="w-20 h-4 bg-black/10 rounded-full flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-black/20" />
+        {/* Mobile Phone Simulated Status Bar: ONLY shown on desktop when simulating a phone chassis */}
+        {isMobileFrame && (
+          <div className="hidden sm:flex items-center justify-between px-6 pt-2.5 pb-1 text-[#2D2825] select-none text-xs font-semibold shrink-0 bg-[#F9F6F2]">
+            <span>9:41</span>
+            <div className="w-16 h-3.5 bg-black/10 rounded-full flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-black/20" />
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <Signal className="w-3.5 h-3.5" />
+              <Wifi className="w-3.5 h-3.5" />
+              <BatteryMedium className="w-4 h-4" />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <Signal className="w-3.5 h-3.5" />
-            <Wifi className="w-3.5 h-3.5" />
-            <BatteryMedium className="w-4 h-4" />
-          </div>
-        </div>
+        )}
 
         {/* Navigation Bar */}
         <Navbar
@@ -611,6 +650,8 @@ export default function App() {
           }}
           isMobileFrame={isMobileFrame}
           setIsMobileFrame={setIsMobileFrame}
+          gender={gender}
+          setGender={handleGenderChange}
           savedDesignsCount={designs.length}
           activeOrdersCount={orders.filter((o) => o.status !== 'DELIVERED').length}
           unreadNotificationsCount={notifications.filter((n) => !n.isRead).length}
@@ -626,7 +667,7 @@ export default function App() {
         />
 
         {/* Main Content Area */}
-        <main className="w-full px-3 sm:px-4 pt-2 pb-24 flex-1 overflow-y-auto">
+        <main className={`w-full ${isMobileFrame ? 'px-3 sm:px-4' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} pt-2 pb-24 flex-1 overflow-y-auto`}>
           
           {/* Documentation Portal View */}
           {showDocs ? (
@@ -676,6 +717,8 @@ export default function App() {
               {activeTab === 'home' && (
                 <SplashScreen
                   userName={currentUser?.name || 'Aanya'}
+                  gender={gender}
+                  onGenderChange={handleGenderChange}
                   onStartGenerator={handleStartCustomizerFromPrompt}
                   onExploreTailors={() => setActiveTab('tailors')}
                   onExploreMarketplace={() => setActiveTab('marketplace')}
@@ -691,7 +734,7 @@ export default function App() {
                   onRequestStitching={handleRequestStitchingForTailor}
                   onSelectCategory={(catName) => {
                     handleStartCustomizerFromPrompt(
-                      `Exquisite bespoke ${catName} crafted with hand zardozi work and pure silk textile`,
+                      `Exquisite bespoke ${catName} crafted with hand zardozi work and pure textile`,
                       catName as any
                     );
                   }}
@@ -703,7 +746,9 @@ export default function App() {
 
               {activeTab === 'generator' && (
                 <AIDressGenerator 
-                  key={`${generatorPrefill.prompt || ''}-${generatorPrefill.dressType || ''}`}
+                  key={`${generatorPrefill.prompt || ''}-${generatorPrefill.dressType || ''}-${gender}`}
+                  gender={gender}
+                  onGenderChange={handleGenderChange}
                   onDesignGenerated={handleDesignGenerated}
                   onOpenNotifications={() => setNotificationsModalOpen(true)}
                   onOpenHistory={() => setActiveTab('wardrobe')}
@@ -717,12 +762,20 @@ export default function App() {
                   }}
                   initialPrompt={generatorPrefill.prompt}
                   initialDressType={generatorPrefill.dressType}
-                  latestConcept={activeDesign || designs[0]}
+                  latestConcept={
+                    activeDesign && (
+                      (gender === 'men' && (activeDesign.tags?.some((t) => t.toLowerCase().includes('men')) || activeDesign.id.includes('men'))) ||
+                      (gender === 'women' && !activeDesign.id.includes('men') && !activeDesign.tags?.some((t) => t.toLowerCase().includes('men')))
+                    )
+                      ? activeDesign
+                      : (gender === 'men' ? designs.find((d) => d.id.includes('men')) || designs[0] : designs.find((d) => !d.id.includes('men')) || designs[0])
+                  }
                 />
               )}
 
               {activeTab === 'marketplace' && (
                 <MarketplaceView
+                  gender={gender}
                   products={products}
                   wishlistIds={wishlistProductIds}
                   onToggleWishlist={handleToggleWishlist}
@@ -733,7 +786,7 @@ export default function App() {
                   }}
                   onRequestCustomStitch={(product) => {
                     handleStartCustomizerFromPrompt(
-                      `Custom bespoke edition of ${product.title} with 14-point body fit and hand embroidery`,
+                      `Custom bespoke edition of ${product.title} with exact body fit and hand embroidery`,
                       product.category as any
                     );
                   }}
@@ -787,6 +840,7 @@ export default function App() {
 
               {activeTab === 'tailors' && (
                 <TailorMarketplace
+                  gender={gender}
                   tailors={tailors}
                   selectedTailor={selectedTailor}
                   onSelectTailor={setSelectedTailor}
@@ -808,6 +862,7 @@ export default function App() {
                   orders={orders}
                   onOpenChat={handleOpenChat}
                   onSubmitReview={handleSubmitReview}
+                  onConfirmDelivery={handleConfirmOrderDelivery}
                 />
               )}
 
@@ -841,6 +896,7 @@ export default function App() {
               if (tab !== 'design-viewer') setActiveDesign(null);
             }}
             activeOrdersCount={orders.filter((o) => o.status !== 'DELIVERED').length}
+            isMobileFrame={isMobileFrame}
           />
         )}
 
@@ -888,6 +944,7 @@ export default function App() {
           onClose={() => setMeasurementsModalOpen(false)}
           measurements={measurements}
           onSaveMeasurements={handleSaveMeasurements}
+          initialGender={gender}
         />
 
         {/* Tailor Verification KYC Modal */}

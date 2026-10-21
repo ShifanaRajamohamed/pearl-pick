@@ -80,3 +80,50 @@
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* Print Order Summary Styles & PDF formatting */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #1A1715 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app navigation chrome, chat overlays, FABs, and non-printable elements */
+  nav,
+  header,
+  footer,
+  aside,
+  #bottom-nav,
+  #floating-ai-fab,
+  #global-chat-drawer,
+  .no-print,
+  button,
+  .fixed:not(#printable-order-modal) {
+    display: none !important;
+  }
+
+  /* Make sure printable document takes full width and renders cleanly */
+  #printable-order-document {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #FFFFFF !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .print-page-break {
+    page-break-inside: avoid;
+  }
+}
+

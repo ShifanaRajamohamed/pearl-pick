@@ -12,6 +12,7 @@ import {
   IndianRupee
 } from 'lucide-react';
 import { TailorQuotation } from '../../types';
+import { fireCelebrationConfetti, SuccessCelebrationOverlay } from '../Common/SuccessCelebrationOverlay';
 
 interface UPIPaymentModalProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ export const UPIPaymentModal: React.FC<UPIPaymentModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [vaultId, setVaultId] = useState('');
 
+  const [showCelebrationOverlay, setShowCelebrationOverlay] = useState(false);
+
   if (!isOpen) return null;
 
   const handlePayNow = () => {
@@ -43,11 +46,15 @@ export const UPIPaymentModal: React.FC<UPIPaymentModalProps> = ({
     setTimeout(() => {
       setIsProcessing(false);
       setIsSuccess(true);
-      setTimeout(() => {
-        onPaymentSuccess(newVaultId);
-        onClose();
-      }, 1400);
-    }, 1500);
+      setShowCelebrationOverlay(true);
+      fireCelebrationConfetti();
+    }, 1200);
+  };
+
+  const handleCelebrationProceed = () => {
+    setShowCelebrationOverlay(false);
+    onPaymentSuccess(vaultId);
+    onClose();
   };
 
   return (
@@ -245,6 +252,21 @@ export const UPIPaymentModal: React.FC<UPIPaymentModalProps> = ({
           )}
         </div>
       </motion.div>
+
+      {/* Success Celebration Overlay with Confetti */}
+      <SuccessCelebrationOverlay
+        isOpen={showCelebrationOverlay}
+        type="ESCROW_PAYMENT_CONFIRMED"
+        amount={quotation.totalAmount}
+        vaultId={vaultId}
+        tailorName={quotation.tailorName}
+        garmentTitle="Custom Bespoke Commission"
+        onClose={handleCelebrationProceed}
+        onPrimaryAction={handleCelebrationProceed}
+        primaryActionLabel="Track Order Progress"
+        onSecondaryAction={handleCelebrationProceed}
+        secondaryActionLabel="Close Receipt"
+      />
     </div>
   );
 };

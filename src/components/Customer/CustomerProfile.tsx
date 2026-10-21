@@ -123,28 +123,42 @@ export const CustomerProfileView: React.FC<CustomerProfileProps> = ({
 
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 text-xs">
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
-            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Full Bust</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.bust}"</span>
+            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">
+              {measurements.chest ? 'Chest / Bust' : 'Full Bust'}
+            </span>
+            <span className="text-sm font-bold text-[#4A3728]">
+              {measurements.chest || measurements.bust}"
+            </span>
           </div>
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
-            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Natural Waist</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.waist}"</span>
+            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">
+              {measurements.trouserWaist ? 'Trouser Waist' : 'Natural Waist'}
+            </span>
+            <span className="text-sm font-bold text-[#4A3728]">
+              {measurements.trouserWaist || measurements.waist}"
+            </span>
           </div>
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
             <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Low Hip / Seat</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.lowHip}"</span>
+            <span className="text-sm font-bold text-[#4A3728]">{measurements.seatHip || measurements.lowHip}"</span>
           </div>
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
-            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Shoulders</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.shoulderToShoulder}"</span>
+            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">
+              {measurements.shoulderWidth ? 'Shoulder Width' : 'Shoulders'}
+            </span>
+            <span className="text-sm font-bold text-[#4A3728]">{measurements.shoulderWidth || measurements.shoulderToShoulder}"</span>
           </div>
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
-            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Hollow to Floor</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.hollowToFloor}"</span>
+            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">
+              {measurements.jacketLength ? 'Jacket Length' : 'Hollow to Floor'}
+            </span>
+            <span className="text-sm font-bold text-[#4A3728]">{measurements.jacketLength || measurements.hollowToFloor}"</span>
           </div>
           <div className="p-3 rounded-2xl bg-[#F5F2ED]/60 border border-[#4A3728]/10">
-            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">Height</span>
-            <span className="text-sm font-bold text-[#4A3728]">{measurements.height}"</span>
+            <span className="text-[9px] text-[#8C7A6B] uppercase font-bold tracking-wider block">
+              {measurements.collarSize ? 'Collar Size' : 'Height'}
+            </span>
+            <span className="text-sm font-bold text-[#4A3728]">{measurements.collarSize ? `${measurements.collarSize}"` : `${measurements.height}"`}</span>
           </div>
         </div>
 

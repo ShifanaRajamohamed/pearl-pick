@@ -1,15 +1,19 @@
 {
   "id": "/",
-  "name": "Pearl Pick Atelier",
+  "name": "PEARL PICK! — Bespoke Couture & Tailor Marketplace",
   "short_name": "PearlPick",
-  "description": "AI-Powered Bespoke Couture & Master Tailor Atelier Marketplace.",
+  "description": "AI-Powered Custom Dress Design Marketplace connecting customers with master verified tailors for bespoke fashion creations.",
+  "lang": "en-US",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#FAF7F2",
   "theme_color": "#2D2825",
   "categories": ["lifestyle", "shopping", "fashion"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/pwa-192x192.png",
@@ -28,6 +32,34 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "AI Design Studio",
+      "short_name": "Studio",
+      "description": "Generate bespoke couture designs with AI",
+      "url": "/?tab=generator",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "My Orders & Escrow",
+      "short_name": "Orders",
+      "description": "Track tailoring progress & milestone escrow vault",
+      "url": "/?tab=orders",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

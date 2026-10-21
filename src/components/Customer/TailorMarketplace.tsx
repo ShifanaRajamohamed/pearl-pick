@@ -23,6 +23,7 @@ interface TailorMarketplaceProps {
   selectedTailor: TailorProfile | null;
   onSelectTailor: (tailor: TailorProfile | null) => void;
   onContactTailor: (tailor: TailorProfile) => void;
+  gender?: 'women' | 'men';
 }
 
 export const TailorMarketplace: React.FC<TailorMarketplaceProps> = ({
@@ -30,12 +31,23 @@ export const TailorMarketplace: React.FC<TailorMarketplaceProps> = ({
   selectedTailor,
   onSelectTailor,
   onContactTailor,
+  gender = 'women'
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('All');
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>(
+    gender === 'men' ? "Men's Bespoke Suiting" : 'All'
+  );
   const [verifiedOnly, setVerifiedOnly] = useState<boolean>(true);
 
-  const specialties = ['All', 'Bridal & Wedding', 'Red Carpet Gowns', 'Indo-Western Lehanga', 'Modern Blazer Dress', 'Contemporary Qipao'];
+  const specialties = [
+    'All',
+    "Men's Bespoke Suiting",
+    'Royal Sherwanis & Bandhgalas',
+    'Bridal & Wedding',
+    'Red Carpet Gowns',
+    'Indo-Western Lehanga',
+    'Savile Row Tailoring'
+  ];
 
   const filteredTailors = tailors.filter((t) => {
     if (verifiedOnly && t.verificationStatus !== 'VERIFIED') return false;

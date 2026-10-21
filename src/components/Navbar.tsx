@@ -6,18 +6,14 @@ import {
   Search, 
   Bell, 
   User, 
-  Layers, 
   Monitor, 
   Smartphone, 
   BookOpen, 
-  ShieldCheck, 
-  LogOut, 
   LogIn,
-  Heart
+  Package
 } from 'lucide-react';
 import { UserRole, AuthUser } from '../types';
 import { OfflineSyncBadge } from './OfflineSyncBadge';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -26,6 +22,8 @@ interface NavbarProps {
   setActiveTab: (tab: string) => void;
   isMobileFrame: boolean;
   setIsMobileFrame: (val: boolean) => void;
+  gender: 'women' | 'men';
+  setGender: (g: 'women' | 'men') => void;
   savedDesignsCount: number;
   activeOrdersCount: number;
   unreadNotificationsCount: number;
@@ -47,6 +45,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   isMobileFrame,
   setIsMobileFrame,
+  gender,
+  setGender,
   savedDesignsCount,
   activeOrdersCount,
   unreadNotificationsCount,
@@ -61,32 +61,61 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout
 }) => {
   return (
-    <header id="main-header" className="sticky top-0 z-40 bg-[#F9F6F2]/90 backdrop-blur-xl border-b border-[#E4D9D1] transition-all">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
+    <header id="main-header" className="sticky top-0 z-40 bg-[#F9F6F2]/95 backdrop-blur-xl border-b border-[#E4D9D1] transition-all">
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-18 gap-2">
           
-          {/* Brand Logo Identity */}
+          {/* 1. BRAND LOGO IDENTITY */}
           <div 
             id="brand-logo-container"
-            className="flex items-center gap-2.5 cursor-pointer select-none shrink-0" 
+            className="flex items-center gap-2 cursor-pointer select-none shrink-0" 
             onClick={() => { setShowDocs(false); setActiveTab('home'); }}
           >
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#2D2825] text-white shadow-2xs">
               <span className="font-serif text-sm font-bold tracking-wider">P</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-serif text-lg sm:text-xl font-bold tracking-tight text-[#2D2825] whitespace-nowrap">
+            <div className="flex items-center gap-1.5">
+              <span className="font-serif text-base sm:text-lg font-bold tracking-tight text-[#2D2825] whitespace-nowrap">
                 PEARL PICK
               </span>
               {!isMobileFrame && (
                 <span className="text-[9px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded-full bg-[#FBECEF] text-[#8D2434] border border-[#E8C5CC] hidden lg:inline-flex">
-                  Atelier
+                  Bespoke Atelier
                 </span>
               )}
             </div>
           </div>
 
-          {/* Center Navigation Links (Desktop only when not mobile frame) */}
+          {/* 2. GENDER SEGMENTED SWITCHER (WOMEN / MEN) */}
+          <div 
+            id="gender-toggle-bar"
+            className="flex items-center p-0.5 rounded-full bg-[#EFE9E2] border border-[#E0D6CC] shadow-inner shrink-0"
+          >
+            <button
+              id="gender-btn-women"
+              onClick={() => setGender('women')}
+              className={`px-2.5 sm:px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                gender === 'women'
+                  ? 'bg-white text-[#8D2434] shadow-xs'
+                  : 'text-[#7D726A] hover:text-[#2D2825]'
+              }`}
+            >
+              Women
+            </button>
+            <button
+              id="gender-btn-men"
+              onClick={() => setGender('men')}
+              className={`px-2.5 sm:px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                gender === 'men'
+                  ? 'bg-[#2D2825] text-white shadow-xs'
+                  : 'text-[#7D726A] hover:text-[#2D2825]'
+              }`}
+            >
+              Men
+            </button>
+          </div>
+
+          {/* 3. CENTER NAVIGATION (Desktop full layout only when frame is OFF) */}
           {!isMobileFrame && (
             <nav className="hidden lg:flex items-center space-x-1">
               {!showDocs && currentRole === 'customer' && (
@@ -166,29 +195,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             </nav>
           )}
 
-          {/* Right Action Icons: Search, Notifications, Frame Toggle */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* 4. RIGHT ACTION ICONS: Clean touch targets (Search, Bell, Profile) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             
-            {/* 1. Search Icon Button */}
+            {/* Search Icon Button */}
             <button
               id="nav-search-btn"
               onClick={openSearch}
-              className="w-9 h-9 rounded-full bg-white border border-[#ECE6DE] text-[#2D2825] hover:text-[#8D2434] hover:bg-[#F7F4EE] flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-[#ECE6DE] text-[#2D2825] hover:text-[#8D2434] hover:bg-[#F7F4EE] flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
               title="Search"
             >
-              <Search className="w-4 h-4" />
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
-            {/* 2. Notification Bell Button */}
+            {/* Notification Bell Button */}
             <button
               id="nav-notifications-btn"
               onClick={openNotifications}
-              className="relative w-9 h-9 rounded-full bg-white border border-[#ECE6DE] text-[#2D2825] hover:text-[#8D2434] hover:bg-[#F7F4EE] flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
+              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-[#ECE6DE] text-[#2D2825] hover:text-[#8D2434] hover:bg-[#F7F4EE] flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
               title="Notifications"
             >
-              <Bell className="w-4 h-4" />
+              <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#8D2434] ring-2 ring-white" />
+                <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-2 h-2 rounded-full bg-[#8D2434] ring-2 ring-white" />
               )}
             </button>
 
@@ -216,26 +245,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* In-App PWA Install Button */}
-            <PWAInstallButton variant="pill" />
-
-            {/* Mobile Simulation Frame Toggle */}
+            {/* Mobile Simulation Frame Toggle - Only shown on tablets/desktop where viewport allows switching */}
             <button
               id="btn-toggle-frame"
               onClick={() => setIsMobileFrame(!isMobileFrame)}
-              className={`w-9 h-9 rounded-full border transition-all cursor-pointer flex items-center justify-center ${
+              className={`hidden sm:flex w-8 h-8 sm:w-9 sm:h-9 rounded-full border transition-all cursor-pointer items-center justify-center ${
                 isMobileFrame 
                   ? 'bg-[#2D2825] text-white border-[#2D2825]' 
                   : 'bg-white text-[#2D2825] border-[#ECE6DE] hover:bg-[#F7F4EE]'
               }`}
-              title={isMobileFrame ? "Switch to Desktop Browser Layout" : "Switch to Mobile App Preview (390px)"}
+              title={isMobileFrame ? "Switch to Full Desktop View" : "Switch to Mobile Phone Preview"}
             >
-              {isMobileFrame ? <Monitor className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+              {isMobileFrame ? <Monitor className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
             </button>
 
             {/* Role Switcher Pill - Desktop only */}
             {!isMobileFrame && (
-              <div className="hidden lg:flex items-center bg-white p-1 rounded-full border border-[#ECE6DE] shadow-2xs">
+              <div className="hidden lg:flex items-center bg-white p-0.5 rounded-full border border-[#ECE6DE] shadow-2xs">
                 <button
                   id="role-customer-btn"
                   onClick={() => { setCurrentRole('customer'); setShowDocs(false); }}
@@ -261,43 +287,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            {/* Authentication / User Profile Button */}
+            {/* User Profile Avatar / Sign In */}
             {currentUser ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="nav-user-profile-btn"
-                  onClick={onOpenProfile}
-                  className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white border border-[#E4D9D1] hover:border-[#B47B84] shadow-xs transition-all cursor-pointer"
-                >
-                  <img 
-                    src={currentUser.avatar} 
-                    alt={currentUser.name} 
-                    className="w-6 h-6 rounded-full object-cover border border-[#E4D9D1]"
-                  />
-                  <div className="text-left hidden md:block">
-                    <div className="text-[11px] font-bold text-[#2D2825] leading-tight flex items-center gap-1">
-                      {currentUser.name.split(' ')[0]}
-                      <span className="text-[9px] px-1 py-0.2 bg-[#F3ECE6] text-[#726761] rounded border border-[#E4D9D1]">
-                        ₹{(((currentUser.walletBalanceINR ?? 0) / 1000) || 0).toFixed(0)}k
-                      </span>
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  id="nav-logout-quick-btn"
-                  onClick={onLogout}
-                  title="Log out of account"
-                  className="p-2 rounded-full text-[#726761] hover:text-[#B47B84] hover:bg-[#E9D4D7] transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                id="nav-user-profile-btn"
+                onClick={onOpenProfile}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-[#E4D9D1] hover:border-[#8D2434] transition-all cursor-pointer overflow-hidden shadow-2xs shrink-0 flex items-center justify-center bg-white p-0.5"
+                title={`${currentUser.name} - Open Profile`}
+              >
+                <img 
+                  src={currentUser.avatar} 
+                  alt={currentUser.name} 
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full rounded-full object-cover"
+                />
+              </button>
             ) : (
               <button
                 id="nav-login-btn"
                 onClick={onOpenAuth}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#4A3728] text-white text-xs font-semibold hover:bg-[#38291E] shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#2D2825] text-white text-xs font-semibold hover:bg-[#1A1816] shadow-sm transition-all cursor-pointer shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Sign In</span>
