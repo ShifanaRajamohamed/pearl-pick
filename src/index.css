@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-display: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+    --font-sans: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F9F6F2;
+    color: #2D2825;
+  }
+}
+
+.font-serif {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-sans {
+  font-family: 'Inter', 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Custom scrollbar for Sleek Interface luxury aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F9F6F2;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E4D9D1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B47B84;
+}
+
+/* Sleek Interface Glassmorphism & Panel Utilities */
+.sleek-glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #E4D9D1;
+}
+
+.sleek-glass-rose {
+  background: rgba(233, 212, 215, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(180, 123, 132, 0.3);
+}
+
+.sleek-card {
+  background: #FFFFFF;
+  border-radius: 28px;
+  border: 1px solid #E4D9D1;
+  box-shadow: 0 4px 20px -2px rgba(45, 40, 37, 0.04);
+}
+
+.glass-luxury {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #E4D9D1;
+}
+
+.glass-dark {
+  background: rgba(45, 40, 37, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Print Order Summary Styles & PDF formatting */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #1A1715 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app navigation chrome, chat overlays, FABs, and non-printable elements */
+  nav,
+  header,
+  footer,
+  aside,
+  #bottom-nav,
+  #floating-ai-fab,
+  #global-chat-drawer,
+  .no-print,
+  button,
+  .fixed:not(#printable-order-modal) {
+    display: none !important;
+  }
+
+  /* Make sure printable document takes full width and renders cleanly */
+  #printable-order-document {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #FFFFFF !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .print-page-break {
+    page-break-inside: avoid;
+  }
+}
+

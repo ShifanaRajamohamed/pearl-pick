@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="pearlBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3D2C24"/>
+      <stop offset="100%" stop-color="#231A15"/>
+    </linearGradient>
+    <linearGradient id="roseAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D99B9B"/>
+      <stop offset="100%" stop-color="#8D2434"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with subtle border -->
+  <rect width="512" height="512" rx="112" fill="url(#pearlBg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#D4AF37" stroke-opacity="0.25" stroke-width="3"/>
+  
+  <!-- Stylized Monogram P -->
+  <text x="225" y="345" font-family="Playfair Display, Georgia, serif" font-size="280" font-weight="700" font-style="italic" fill="#FAF7F2" text-anchor="middle">P</text>
+  
+  <!-- Pearl / Gem Accent -->
+  <circle cx="340" cy="180" r="32" fill="url(#roseAccent)"/>
+  <circle cx="332" cy="172" r="10" fill="#FFFFFF" fill-opacity="0.75"/>
+</svg>
