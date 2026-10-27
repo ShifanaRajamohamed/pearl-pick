@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { DressDesign } from '../../types';
 import { FabricSwatchGallery, PREDEFINED_FABRICS } from './FabricSwatchGallery';
-import { generateCohesiveCoutureAngles } from '../../services/coutureVisualEngine';
+import { generateCohesiveCoutureAngles, parseCustomerPromptToSpecs } from '../../services/coutureVisualEngine';
 
 interface AIDressGeneratorProps {
   onDesignGenerated: (design: DressDesign) => void;
@@ -86,6 +86,39 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [generationStage, setGenerationStage] = useState<number>(0);
 
+  // Parse customer prompt in real time so any silhouette, color, fabric, neckline, sleeve, or embroidery written in the prompt takes priority
+  const parsedFromPrompt = React.useMemo(() => {
+    return parseCustomerPromptToSpecs(prompt, {
+      gender,
+      dressType,
+      color,
+      fabric,
+      neckline: neckStyle,
+      sleeve: sleeves,
+      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork'
+    });
+  }, [prompt, gender, dressType, color, fabric, neckStyle, sleeves]);
+
+  // Synchronize studio attribute pills as the customer types a custom prompt
+  const handlePromptChange = (newPromptText: string) => {
+    setPrompt(newPromptText);
+    if (newPromptText.trim().length > 2) {
+      const extracted = parseCustomerPromptToSpecs(newPromptText, {
+        gender,
+        dressType,
+        color,
+        fabric,
+        neckline: neckStyle,
+        sleeve: sleeves
+      });
+      if (extracted.dressType && extracted.dressType !== dressType) setDressType(extracted.dressType);
+      if (extracted.color && extracted.color !== color) setColor(extracted.color);
+      if (extracted.fabric && extracted.fabric !== fabric) setFabric(extracted.fabric);
+      if (extracted.neckline && extracted.neckline !== neckStyle) setNeckStyle(extracted.neckline);
+      if (extracted.sleeve && extracted.sleeve !== sleeves) setSleeves(extracted.sleeve);
+    }
+  };
+
   // Structured Prompt Builder State: injects dress-type-specific style keywords ('couture', 'high-fashion', 'macro-detail', etc.)
   const DRESS_TYPE_STYLE_KEYWORDS: Record<string, string[]> = React.useMemo(() => ({
     // Women's Couture Dress Types
@@ -93,6 +126,9 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
     'Lehenga': ['couture', 'high-fashion', 'macro-detail', '16-kali royal flare', '24K zardozi border', 'sculpted choli', 'scalloped organza dupatta'],
     'Anarkali': ['couture', 'high-fashion', 'macro-detail', 'floor-grazing kalidar panels', 'Mughal jari work', 'architectural ghera', 'hand-knotted tassels'],
     'Saree Gown': ['couture', 'high-fashion', 'macro-detail', 'pre-pleated pallu drape', 'structured corset blouse', 'metallic kasab border', 'sculptural silhouette'],
+    'Drape Saree': ['couture', 'high-fashion', 'macro-detail', 'handwoven zari pallu', 'pleated patli drape', 'sculpted choli blouse', 'temple border'],
+    'Mermaid Gown': ['couture', 'high-fashion', 'macro-detail', 'sculpted trumpet flare', 'contoured fishtail hem', 'boned corset bodice', 'editorial runway lighting'],
+    'Ball Gown': ['couture', 'high-fashion', 'macro-detail', 'cathedral crinoline dome skirt', 'cinched corset waist', 'royal train', 'atelier stitch precision'],
     'Corset Dress': ['couture', 'high-fashion', 'macro-detail', 'spiral steel boning', 'contoured bustier', 'draped silk overskirt', 'atelier stitch precision'],
     'Empire Silhouette': ['couture', 'high-fashion', 'macro-detail', 'raised empire waistline', 'elongated columnar fall', 'pearl constellation applique', 'fluid chiffon train'],
     // Men's Bespoke Dress Types
@@ -106,8 +142,8 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   }), []);
 
   const currentDressKeywords = React.useMemo(() => {
-    return DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring', 'artisan handwork'];
-  }, [DRESS_TYPE_STYLE_KEYWORDS, dressType]);
+    return DRESS_TYPE_STYLE_KEYWORDS[parsedFromPrompt.dressType] || DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring', 'artisan handwork'];
+  }, [DRESS_TYPE_STYLE_KEYWORDS, parsedFromPrompt.dressType, dressType]);
 
   const [selectedStyleKeywords, setSelectedStyleKeywords] = useState<string[]>(currentDressKeywords);
   const [autoInjectKeywords, setAutoInjectKeywords] = useState<boolean>(true);
@@ -115,28 +151,33 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
 
   // Sync active style keywords whenever dressType changes
   useEffect(() => {
-    setSelectedStyleKeywords(DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring']);
-  }, [dressType, DRESS_TYPE_STYLE_KEYWORDS]);
+    setSelectedStyleKeywords(DRESS_TYPE_STYLE_KEYWORDS[parsedFromPrompt.dressType] || DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring']);
+  }, [parsedFromPrompt.dressType, dressType, DRESS_TYPE_STYLE_KEYWORDS]);
 
-  // Build structured prompt that injects specific style keywords based on selected dressType
+  // Build structured prompt that respects the customer's prompt-derived attributes
   const compiledStructuredPrompt = React.useMemo(() => {
-    const baseVision = prompt.trim() || `${color} ${fabric} ${dressType}`;
+    const effectiveDress = parsedFromPrompt.dressType || dressType;
+    const effectiveFabric = parsedFromPrompt.fabric || fabric;
+    const effectiveColor = parsedFromPrompt.color || color;
+    const effectiveNeck = parsedFromPrompt.neckline || neckStyle;
+    const effectiveSleeve = parsedFromPrompt.sleeve || sleeves;
+
+    const baseVision = prompt.trim() || `${effectiveColor} ${effectiveFabric} ${effectiveDress}`;
     const activeTags = selectedStyleKeywords.length > 0
       ? selectedStyleKeywords
       : ['couture', 'high-fashion', 'macro-detail'];
 
-    // Ensure core style keywords are always represented when auto-inject is enabled
     const mergedKeywords = autoInjectKeywords
       ? Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...activeTags]))
       : activeTags;
 
-    const specsSegment = `[Silhouette: ${dressType} | Fabric: ${fabric} | Palette: ${color} | Neckline/Collar: ${neckStyle} | Sleeve: ${sleeves} | Occasion: ${occasion}]`;
+    const specsSegment = `[Silhouette: ${effectiveDress} | Fabric: ${effectiveFabric} | Palette: ${effectiveColor} | Neckline/Collar: ${effectiveNeck} | Sleeve: ${effectiveSleeve} | Occasion: ${occasion}]`;
     const keywordsSegment = mergedKeywords.length > 0
       ? `[Style Keywords: ${mergedKeywords.join(', ')}]`
       : '';
 
     return `${baseVision} ${specsSegment} ${keywordsSegment}`.trim();
-  }, [prompt, dressType, fabric, color, neckStyle, sleeves, occasion, selectedStyleKeywords, autoInjectKeywords]);
+  }, [prompt, parsedFromPrompt, dressType, fabric, color, neckStyle, sleeves, occasion, selectedStyleKeywords, autoInjectKeywords]);
 
   const toggleStyleKeyword = (kw: string) => {
     setSelectedStyleKeywords((prev) =>
@@ -146,7 +187,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
 
   const handleApplyStructuredToPrompt = () => {
     const topKeywords = Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...selectedStyleKeywords])).slice(0, 6);
-    const enriched = `${color} ${fabric} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()} for ${occasion.toLowerCase()} — ${topKeywords.join(', ')}`;
+    const enriched = `${parsedFromPrompt.color || color} ${parsedFromPrompt.fabric || fabric} ${parsedFromPrompt.dressType || dressType} with ${(parsedFromPrompt.neckline || neckStyle).toLowerCase()} and ${(parsedFromPrompt.sleeve || sleeves).toLowerCase()} for ${occasion.toLowerCase()} — ${topKeywords.join(', ')}`;
     setPrompt(enriched.slice(0, 300));
   };
 
@@ -177,7 +218,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   const optionsMap: Record<string, string[]> = {
     dressType: gender === 'men' 
       ? ['Royal Jodhpuri Bandhgala', 'Savile Row 3-Piece Tuxedo', 'Imperial Awadh Sherwani', 'Bespoke Nehru Jacket & Kurta', 'Italian Double-Breasted Blazer', 'Designer Indo-Western Achkan', 'Luxury Linen Safari Suit']
-      : ['Gown', 'Lehenga', 'Anarkali', 'Saree Gown', 'Corset Dress', 'Empire Silhouette'],
+      : ['Gown', 'Lehenga', 'Anarkali', 'Saree Gown', 'Drape Saree', 'Mermaid Gown', 'Ball Gown', 'Corset Dress', 'Empire Silhouette'],
     occasion: gender === 'men'
       ? ['Groom & Royal Baraat', 'Black Tie Gala & Red Carpet', 'Sangeet & Cocktail Night', 'Festive Puja & Diwali', 'Diplomatic & Corporate Luxury']
       : ['Bridal', 'Evening Reception', 'Cocktail', 'Festive', 'Red Carpet Gala'],
@@ -186,7 +227,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
       : PREDEFINED_FABRICS.map((f) => f.name),
     color: gender === 'men'
       ? ['Kashi Midnight Obsidian', 'Bordeaux Wine Velvet', 'Imperial Emerald', 'Antique Gold & Ivory', 'Charcoal Slate', 'Morpankhi Peacock Blue']
-      : ['Pearl blush', 'Ivory white', 'Midnight navy', 'Rani pink', 'Sage green', 'Antique gold'],
+      : ['Pearl blush', 'Ivory white', 'Midnight navy', 'Rani pink', 'Sage green', 'Antique gold', 'Emerald Green', 'Ruby Crimson'],
     sleeves: gender === 'men'
       ? ['French Tailored Cuffs', 'AMF Pick-Stitched 4-Button Cuff', 'Churidar Gathered Sleeves', 'Full Length Fitted Cuffs']
       : ['Long sheer', 'Cap sleeves', 'Elbow-length', 'Sleeveless', 'Flute sleeves', 'Sheer cape'],
@@ -210,61 +251,70 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         { label: 'Saree Gown', dressType: 'Saree Gown', color: 'Antique gold', fabric: 'Kanjeevaram Zari Silk', text: 'Antique gold pre-pleated Kanjeevaram silk saree gown with Maggam work designer blouse' }
       ];
 
-  // Dynamically generate 4-angle cohesive renders matching current selected studio attributes
+  // Dynamically generate 4-angle cohesive renders strictly honoring the customer's prompt first
   const liveAngles = React.useMemo(() => {
     return generateCohesiveCoutureAngles({
-      gender,
-      dressType,
-      color,
-      fabric,
-      neckline: neckStyle,
-      sleeve: sleeves,
-      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
-      title: `${color} ${dressType}`,
-      prompt: compiledStructuredPrompt
+      gender: parsedFromPrompt.gender,
+      dressType: parsedFromPrompt.dressType,
+      color: parsedFromPrompt.color,
+      fabric: parsedFromPrompt.fabric,
+      neckline: parsedFromPrompt.neckline,
+      sleeve: parsedFromPrompt.sleeve,
+      pattern: parsedFromPrompt.pattern,
+      title: parsedFromPrompt.title,
+      prompt: prompt.trim() || compiledStructuredPrompt
     });
-  }, [gender, dressType, color, fabric, neckStyle, sleeves, compiledStructuredPrompt]);
+  }, [parsedFromPrompt, prompt, compiledStructuredPrompt]);
 
   const activeConcept: DressDesign = React.useMemo(() => ({
-    id: gender === 'men' ? `design-men-${dressType.toLowerCase().replace(/\s+/g, '-')}` : `design-women-${dressType.toLowerCase().replace(/\s+/g, '-')}`,
+    id: `design-${parsedFromPrompt.gender}-${parsedFromPrompt.dressType.toLowerCase().replace(/\s+/g, '-')}`,
     customerId: 'cust-1',
     customerName: 'Ananya Verma',
-    title: `${color} ${dressType}`,
-    prompt: compiledStructuredPrompt,
+    title: parsedFromPrompt.title,
+    prompt: prompt.trim() || compiledStructuredPrompt,
     createdAt: new Date().toISOString(),
     isFavorite: true,
     selectedVariationIndex: 0,
-    tags: [gender === 'men' ? 'Menswear' : 'Womenswear', dressType, color, fabric, occasion, ...selectedStyleKeywords.slice(0, 3)],
+    tags: [
+      parsedFromPrompt.gender === 'men' ? 'Menswear' : 'Womenswear',
+      parsedFromPrompt.dressType,
+      parsedFromPrompt.color,
+      parsedFromPrompt.fabric,
+      occasion,
+      ...selectedStyleKeywords.slice(0, 3)
+    ],
     variations: [
       {
-        id: `var-live-${gender}`,
-        name: `${color} ${dressType}`,
-        tagline: `Bespoke ${dressType.toLowerCase()} in ${fabric.toLowerCase()} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()} for ${occasion.toLowerCase()}.`,
+        id: `var-live-${parsedFromPrompt.gender}`,
+        name: parsedFromPrompt.title,
+        tagline: prompt.trim()
+          ? `Custom AI design generated from prompt: "${prompt.trim().slice(0, 120)}"`
+          : `Bespoke ${parsedFromPrompt.dressType.toLowerCase()} in ${parsedFromPrompt.fabric.toLowerCase()} with ${parsedFromPrompt.neckline.toLowerCase()} and ${parsedFromPrompt.sleeve.toLowerCase()} for ${occasion.toLowerCase()}.`,
         frontImageUrl: liveAngles.front,
         backImageUrl: liveAngles.back,
         sideImageUrl: liveAngles.side,
         detailImageUrl: liveAngles.detail,
         fabricDetails: {
-          primary: `${fabric} (Master Loom)`,
-          lining: gender === 'men' ? 'Cupro Breathable Anti-Static Lining' : 'Breathable Silk Crepe & Mulmul',
-          embellishments: gender === 'men' ? '24K gold dabka collar embroidery, bespoke brass lion-crest buttons' : 'Hand-finished pearl constellation, bugle glass beads, silver zardozi',
-          estimatedYards: gender === 'men' ? 5.5 : 7.5,
-          recommendedWeightGsm: gender === 'men' ? 340 : 180
+          primary: `${parsedFromPrompt.fabric} (Master Loom)`,
+          lining: parsedFromPrompt.gender === 'men' ? 'Cupro Breathable Anti-Static Lining' : 'Breathable Silk Crepe & Mulmul',
+          embellishments: parsedFromPrompt.pattern,
+          estimatedYards: parsedFromPrompt.gender === 'men' ? 5.5 : 7.5,
+          recommendedWeightGsm: parsedFromPrompt.gender === 'men' ? 340 : 180
         },
-        tailorNotes: gender === 'men'
+        tailorNotes: parsedFromPrompt.gender === 'men'
           ? [
               'Hand-basted full horsehair canvas chest piece for lasting sculptural drape.',
-              `${neckStyle} reinforced with Japanese collar canvas for upright regal posture.`,
+              `${parsedFromPrompt.neckline} reinforced with Japanese collar canvas for upright regal posture.`,
               'Twin side vents with 2-inch interior seam allowance on chest and waist.',
-              `${sleeves} with functional horn buttons and hand-sewn buttonholes.`
+              `${parsedFromPrompt.sleeve} with functional horn buttons and hand-sewn buttonholes.`
             ]
           : [
-              `Hand-finished embroidery across ${neckStyle.toLowerCase()} bodice and ${sleeves.toLowerCase()}.`,
+              `Hand-finished ${parsedFromPrompt.pattern.toLowerCase()} across ${parsedFromPrompt.neckline.toLowerCase()} bodice and ${parsedFromPrompt.sleeve.toLowerCase()}.`,
               'Sculpted inner bodice with invisible boning structure and 2.5-inch margin.',
               'Fluid skirt sweep with horsehair braid hem for structured movement.',
               'Concealed back closure with silk loop micro-buttons.'
             ],
-        stylingTips: gender === 'men'
+        stylingTips: parsedFromPrompt.gender === 'men'
           ? [
               'Pair with an antique pocket square, uncut emerald brooch, and velvet juttis.',
               `Ideal for ${occasion.toLowerCase()} and formal evening ceremonies.`
@@ -273,30 +323,30 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               'Pair with teardrop pearl earrings and a delicate polki choker.',
               `Tailored specifically for ${occasion.toLowerCase()} entrances.`
             ],
-        colorPsychology: `${color} radiates sovereign poise, serenity, and timeless couture elegance.`,
+        colorPsychology: `${parsedFromPrompt.color} radiates sovereign poise, serenity, and timeless couture elegance.`,
         estimatedCraftTimeDays: 14,
-        estimatedPriceRange: { min: gender === 'men' ? 28000 : 24000, max: gender === 'men' ? 46000 : 42000, currency: 'INR' },
+        estimatedPriceRange: { min: parsedFromPrompt.gender === 'men' ? 28000 : 24000, max: parsedFromPrompt.gender === 'men' ? 46000 : 42000, currency: 'INR' },
         specs: {
-          dressType: dressType as any,
+          dressType: parsedFromPrompt.dressType as any,
           occasion: occasion as any,
-          fabric: fabric as any,
-          color: color,
-          sleeve: sleeves as any,
-          neckline: neckStyle as any,
-          pattern: (gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork') as any
+          fabric: parsedFromPrompt.fabric as any,
+          color: parsedFromPrompt.color,
+          sleeve: parsedFromPrompt.sleeve as any,
+          neckline: parsedFromPrompt.neckline as any,
+          pattern: parsedFromPrompt.pattern as any
         }
       }
     ]
-  }), [gender, dressType, occasion, fabric, color, sleeves, neckStyle, compiledStructuredPrompt, liveAngles, selectedStyleKeywords]);
+  }), [parsedFromPrompt, occasion, prompt, compiledStructuredPrompt, liveAngles, selectedStyleKeywords]);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerationStage(1);
-    setGenerationNotice(`Injecting '${dressType}' couture keywords & initializing AI model...`);
+    setGenerationNotice(`Analyzing customer prompt & extracting '${parsedFromPrompt.dressType}' visual specs...`);
 
     const stageTimer1 = setTimeout(() => {
       setGenerationStage(2);
-      setGenerationNotice('Synthesizing 4-angle couture silhouette & drape proportions...');
+      setGenerationNotice(`Synthesizing ${parsedFromPrompt.color} ${parsedFromPrompt.dressType} 4-angle silhouette...`);
     }, 380);
 
     const stageTimer2 = setTimeout(() => {
@@ -312,17 +362,17 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            gender,
-            dressType,
+            gender: parsedFromPrompt.gender,
+            dressType: parsedFromPrompt.dressType,
             occasion,
-            fabric,
-            color,
-            sleeve: sleeves,
-            neckline: neckStyle,
-            prompt: compiledStructuredPrompt,
+            fabric: parsedFromPrompt.fabric,
+            color: parsedFromPrompt.color,
+            sleeve: parsedFromPrompt.sleeve,
+            neckline: parsedFromPrompt.neckline,
+            prompt: prompt.trim() || compiledStructuredPrompt,
             styleKeywords: selectedStyleKeywords,
-            pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
-            budget: gender === 'men' ? '₹38,000' : '₹35,000'
+            pattern: parsedFromPrompt.pattern,
+            budget: parsedFromPrompt.gender === 'men' ? '₹38,000' : '₹35,000'
           })
         }),
         minDelayPromise
@@ -344,7 +394,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
     } catch (err) {
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
-      console.warn('Backend generation notice, falling back to curated concept:', err);
+      console.warn('Backend generation notice, falling back to prompt-parsed concept:', err);
     }
 
     setIsGenerating(false);
@@ -352,44 +402,53 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
     setGenerationNotice(null);
 
     const assets = generateCohesiveCoutureAngles({
-      gender,
-      dressType,
-      color,
-      fabric,
-      neckline: neckStyle,
-      sleeve: sleeves,
-      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
-      title: `${color} ${dressType}`,
-      prompt: compiledStructuredPrompt
+      gender: parsedFromPrompt.gender,
+      dressType: parsedFromPrompt.dressType,
+      color: parsedFromPrompt.color,
+      fabric: parsedFromPrompt.fabric,
+      neckline: parsedFromPrompt.neckline,
+      sleeve: parsedFromPrompt.sleeve,
+      pattern: parsedFromPrompt.pattern,
+      title: parsedFromPrompt.title,
+      prompt: prompt.trim() || compiledStructuredPrompt
     });
 
     const generatedDesign: DressDesign = {
       id: `design-${Date.now()}`,
       customerId: 'cust-1',
       customerName: 'Ananya Verma',
-      title: `${color} ${dressType}`,
-      prompt: compiledStructuredPrompt,
+      title: parsedFromPrompt.title,
+      prompt: prompt.trim() || compiledStructuredPrompt,
       createdAt: new Date().toISOString(),
       isFavorite: true,
       selectedVariationIndex: 0,
-      tags: [gender === 'men' ? 'Menswear' : 'Womenswear', dressType, color, fabric, 'AI Bespoke', ...selectedStyleKeywords.slice(0, 3)],
+      tags: [
+        parsedFromPrompt.gender === 'men' ? 'Menswear' : 'Womenswear',
+        parsedFromPrompt.dressType,
+        parsedFromPrompt.color,
+        parsedFromPrompt.fabric,
+        'AI Bespoke',
+        ...selectedStyleKeywords.slice(0, 3)
+      ],
       variations: [
         {
           id: `var-${Date.now()}`,
-          name: `${color} ${dressType}`,
-          tagline: `Bespoke master tailor crafted ${dressType.toLowerCase()} in ${fabric.toLowerCase()} for ${occasion.toLowerCase()}.`,
+          name: parsedFromPrompt.title,
+          tagline: prompt.trim()
+            ? `Custom AI design generated from prompt: "${prompt.trim().slice(0, 140)}"`
+            : `Bespoke master tailor crafted ${parsedFromPrompt.dressType.toLowerCase()} in ${parsedFromPrompt.fabric.toLowerCase()} for ${occasion.toLowerCase()}.`,
           frontImageUrl: assets.front,
           backImageUrl: assets.back,
           sideImageUrl: assets.side,
           detailImageUrl: assets.detail,
           fabricDetails: {
-            primary: `${fabric} (Master Handloom)`,
-            lining: gender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Breathable Mulberry Mulmul',
-            embellishments: gender === 'men' ? 'Antique zardozi collar embroidery, lion crest buttons' : 'Hand-finished pearl constellation & resham work',
-            estimatedYards: gender === 'men' ? 5.5 : 7.5,
-            recommendedWeightGsm: gender === 'men' ? 340 : 180
+            primary: `${parsedFromPrompt.fabric} (Master Handloom)`,
+            lining: parsedFromPrompt.gender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Breathable Mulberry Mulmul',
+            embellishments: parsedFromPrompt.pattern,
+            estimatedYards: parsedFromPrompt.gender === 'men' ? 5.5 : 7.5,
+            recommendedWeightGsm: parsedFromPrompt.gender === 'men' ? 340 : 180
           },
-          tailorNotes: gender === 'men' 
+          tailorNotes: parsedFromPrompt.gender === 'men' 
             ? [
                 'Full floating horsehair canvas chest piece for natural sculptural drape.',
                 'Hand-basted shoulder pads aligned to posture profile.',
@@ -401,20 +460,20 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
                 '2.5-inch side margin allowance inside choli/bodice.',
                 'Horsehair braid hem along skirts for dramatic fluid sweep.'
               ],
-          stylingTips: gender === 'men'
+          stylingTips: parsedFromPrompt.gender === 'men'
             ? ['Pair with an uncut polki brooch, pure silk pocket square, and handcrafted velvet mojaris.']
             : ['Pair with teardrop pearl earrings, antique gold choker, and embroidered potli bag.'],
-          colorPsychology: `${color} communicates elevated majesty, serenity, and contemporary couture poise.`,
-          estimatedCraftTimeDays: gender === 'men' ? 14 : 16,
-          estimatedPriceRange: { min: gender === 'men' ? 28000 : 25000, max: gender === 'men' ? 48000 : 42000, currency: 'INR' },
+          colorPsychology: `${parsedFromPrompt.color} communicates elevated majesty, serenity, and contemporary couture poise.`,
+          estimatedCraftTimeDays: parsedFromPrompt.gender === 'men' ? 14 : 16,
+          estimatedPriceRange: { min: parsedFromPrompt.gender === 'men' ? 28000 : 25000, max: parsedFromPrompt.gender === 'men' ? 48000 : 42000, currency: 'INR' },
           specs: {
-            dressType: dressType as any,
+            dressType: parsedFromPrompt.dressType as any,
             occasion: occasion as any,
-            fabric: fabric as any,
-            color: color,
-            sleeve: sleeves as any,
-            neckline: neckStyle as any,
-            pattern: (gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork') as any
+            fabric: parsedFromPrompt.fabric as any,
+            color: parsedFromPrompt.color,
+            sleeve: parsedFromPrompt.sleeve as any,
+            neckline: parsedFromPrompt.neckline as any,
+            pattern: parsedFromPrompt.pattern as any
           }
         }
       ]
@@ -633,19 +692,21 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
             {gender === 'men' ? 'Describe your bespoke menswear vision' : 'Describe your couture dress vision'}
           </label>
           <span className="px-2 py-0.5 rounded-full bg-[#FBECEF] text-[#8D2434] text-[10px] font-bold">
-            {dressType}
+            {parsedFromPrompt.dressType}
           </span>
         </div>
         <textarea
           rows={3}
           maxLength={300}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder={gender === 'men' ? 'e.g. Royal raw silk bandhgala with antique brass buttons and jodhpur breeches...' : 'e.g. Pastel silk organza gown with hand-finished pearl constellation and fluid train...'}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          placeholder={gender === 'men' ? 'e.g. Royal raw silk bandhgala with antique brass buttons and jodhpur breeches...' : 'e.g. Emerald green velvet mermaid gown with v-neck and sleeveless cut...'}
           className="w-full text-xs text-[#2D2825] placeholder-[#7D726A] bg-transparent resize-none focus:outline-none leading-relaxed"
         />
         <div className="flex items-center justify-between text-[10px] text-[#7D726A] pt-1 border-t border-[#FAF7F2]">
-          <span className="italic">Live Silhouette & Color Sync Active</span>
+          <span className="italic">
+            Detected: {parsedFromPrompt.color} • {parsedFromPrompt.dressType} • {parsedFromPrompt.fabric}
+          </span>
           <span>{prompt.length}/300</span>
         </div>
 
@@ -690,7 +751,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           </div>
 
           <p className="text-[10px] text-[#7D726A] leading-relaxed">
-            Automatically injects <span className="font-semibold text-[#2D2825]">couture</span>, <span className="font-semibold text-[#2D2825]">high-fashion</span>, <span className="font-semibold text-[#2D2825]">macro-detail</span>, and <span className="font-semibold text-[#8D2434]">{dressType}</span> craft keywords to maximize AI design relevance.
+            Automatically injects <span className="font-semibold text-[#2D2825]">couture</span>, <span className="font-semibold text-[#2D2825]">high-fashion</span>, <span className="font-semibold text-[#2D2825]">macro-detail</span>, and <span className="font-semibold text-[#8D2434]">{parsedFromPrompt.dressType}</span> craft keywords to maximize AI design relevance.
           </p>
 
           {/* Keyword Chips for Selected Dress Type */}
@@ -750,13 +811,13 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
 
       {/* 4. FABRIC SWATCH GALLERY (Women or Men) */}
       <FabricSwatchGallery
-        selectedFabricName={fabric}
+        selectedFabricName={parsedFromPrompt.fabric || fabric}
         onSelectFabric={(swatch) => {
           setFabric(swatch.name);
         }}
         currentPrompt={prompt}
         onUpdatePromptWithFabric={(newPrompt) => {
-          setPrompt(newPrompt.slice(0, 300));
+          handlePromptChange(newPrompt.slice(0, 300));
         }}
       />
 
@@ -829,7 +890,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               <Package className="w-4 h-4 text-[#8D2434] shrink-0" />
               <div className="min-w-0">
                 <div className="text-[9px] text-[#7D726A] leading-none">Garment Type</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{dressType}</div>
+                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.dressType || dressType}</div>
               </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
@@ -839,9 +900,13 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               {optionsMap.dressType.map((opt) => (
                 <button
                   key={opt}
-                  onClick={() => { setDressType(opt); setActiveDropdown(null); }}
+                  onClick={() => {
+                    setDressType(opt);
+                    setPrompt(`${color} ${fabric} ${opt} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
+                    setActiveDropdown(null);
+                  }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    dressType === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
+                    (parsedFromPrompt.dressType || dressType) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
                   }`}
                 >
                   {opt}
@@ -893,7 +958,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               <Layers className="w-4 h-4 text-[#8D2434] shrink-0" />
               <div className="min-w-0">
                 <div className="text-[9px] text-[#7D726A] leading-none">Fabric</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{fabric}</div>
+                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.fabric || fabric}</div>
               </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
@@ -903,9 +968,13 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               {optionsMap.fabric.map((opt) => (
                 <button
                   key={opt}
-                  onClick={() => { setFabric(opt); setActiveDropdown(null); }}
+                  onClick={() => {
+                    setFabric(opt);
+                    setPrompt(`${color} ${opt} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
+                    setActiveDropdown(null);
+                  }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    fabric === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
+                    (parsedFromPrompt.fabric || fabric) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
                   }`}
                 >
                   {opt}
@@ -925,7 +994,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               <div className="w-4 h-4 rounded-full border border-[#ECE6DE] bg-[#2D2825] shrink-0" />
               <div className="min-w-0">
                 <div className="text-[9px] text-[#7D726A] leading-none">Color</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{color}</div>
+                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.color || color}</div>
               </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
@@ -935,9 +1004,13 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
               {optionsMap.color.map((opt) => (
                 <button
                   key={opt}
-                  onClick={() => { setColor(opt); setActiveDropdown(null); }}
+                  onClick={() => {
+                    setColor(opt);
+                    setPrompt(`${opt} ${fabric} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
+                    setActiveDropdown(null);
+                  }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    color === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
+                    (parsedFromPrompt.color || color) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
                   }`}
                 >
                   {opt}

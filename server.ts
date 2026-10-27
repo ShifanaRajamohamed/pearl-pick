@@ -5,7 +5,12 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
-import { generateCoutureSVGDataUri, generateCohesiveCoutureAngles } from './src/services/coutureVisualEngine';
+import {
+  generateCoutureSVGDataUri,
+  generateCohesiveCoutureAngles,
+  parseCustomerPromptToSpecs,
+  CustomColorHexPalette
+} from './src/services/coutureVisualEngine';
 
 dotenv.config();
 
@@ -32,7 +37,7 @@ function getGeminiClient(): GoogleGenAI | null {
 
 // Circuit breaker and in-memory cache for Gemini API
 let geminiQuotaCooldownUntil = 0;
-const QUOTA_COOLDOWN_PERIOD = 15 * 60 * 1000; // 15-minute cooldown when 429 quota reached
+const QUOTA_COOLDOWN_PERIOD = 5 * 60 * 1000;
 
 interface CachedFashionAdvice {
   data: any;
@@ -41,15 +46,16 @@ interface CachedFashionAdvice {
 let cachedFashionAdvice: CachedFashionAdvice | null = null;
 const FASHION_ADVICE_CACHE_TTL = 30 * 60 * 1000; // 30-minute cache
 
-// Helper to generate content with resilient fallback across models when high demand occurs
+// Helper to generate content with resilient fallback across models
 async function generateContentWithFallback(ai: GoogleGenAI, config: any) {
-  // If we are currently within a quota exhaustion cooldown, fail fast to trigger endpoint fallback
   if (Date.now() < geminiQuotaCooldownUntil) {
     throw new Error('QUOTA_COOLDOWN_ACTIVE');
   }
 
-  const models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  // Prioritize gemini-3.1-flash-lite first for fast, reliable availability
+  const models = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
   let lastErr: any = null;
+  let allQuotaExhausted = true;
 
   for (const model of models) {
     try {
@@ -63,22 +69,22 @@ async function generateContentWithFallback(ai: GoogleGenAI, config: any) {
     } catch (err: any) {
       lastErr = err;
       const msg = err?.message || String(err);
-      if (
-        msg.includes('429') || 
-        msg.includes('RESOURCE_EXHAUSTED') || 
+      const isQuotaError =
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
         msg.includes('quota') ||
         err?.status === 'RESOURCE_EXHAUSTED' ||
-        err?.code === 429
-      ) {
-        geminiQuotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_PERIOD;
-        console.warn('Gemini API quota rate-limit reached. Activating 15-minute cooldown; falling back to curated atelier intelligence.');
-        break;
+        err?.code === 429;
+      if (!isQuotaError) {
+        allQuotaExhausted = false;
       }
-      // If overloaded or temporarily unavailable (503), try next model
-      if (msg.includes('503') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
-        continue;
-      }
+      // Try next model in fallback chain
+      continue;
     }
+  }
+
+  if (allQuotaExhausted && lastErr) {
+    geminiQuotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_PERIOD;
   }
   throw lastErr || new Error('AI models unavailable');
 }
@@ -497,11 +503,95 @@ function getCohesiveAssets(gender: 'men' | 'women', dressType: string) {
   }
 }
 
+// Helper: Use Gemini AI to extract exact hex color palette & garment geometry from any customer prompt
+async function extractVisualBlueprintWithGemini(
+  ai: GoogleGenAI | null,
+  customerPrompt: string,
+  fallbackSpecs: {
+    gender?: 'women' | 'men';
+    dressType?: string;
+    color?: string;
+    fabric?: string;
+    neckline?: string;
+    sleeve?: string;
+  }
+): Promise<{
+  customPalette?: CustomColorHexPalette;
+  silhouette?: string;
+  dressTypeLabel?: string;
+  colorName?: string;
+  fabric?: string;
+  neckline?: string;
+  sleeve?: string;
+  pattern?: string;
+}> {
+  if (!ai || !customerPrompt || customerPrompt.trim().length < 3) {
+    return {};
+  }
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: `Analyze this customer fashion dress prompt and extract the exact visual rendering parameters so our atelier synthesizer draws the exact garment described.
+Customer Prompt: "${customerPrompt}"
+Fallback Context: Gender=${fallbackSpecs.gender || 'women'}, Type=${fallbackSpecs.dressType || ''}, Color=${fallbackSpecs.color || ''}, Fabric=${fallbackSpecs.fabric || ''}
+
+IMPORTANT: Prioritize colors, garment type, sleeves, neckline, and fabric explicitly written in the Customer Prompt over the Fallback Context!
+Return ONLY valid JSON with these exact keys:
+{
+  "colorName": "Descriptive color name from prompt (e.g. Emerald Green, Haldi Yellow, Royal Blue, Crimson Red)",
+  "primaryHex": "#HEXCODE of main garment fabric",
+  "secondaryHex": "#HEXCODE slightly deeper shade of primaryHex for folds",
+  "highlightHex": "#HEXCODE lighter tint of primaryHex for sheen",
+  "deepShadowHex": "#HEXCODE dark shadow shade of primaryHex",
+  "accentMetallicHex": "#HEXCODE for border/zari/buttons (e.g. #D4AF37 for gold, #E0E0E0 for silver)",
+  "embroideryHex": "#HEXCODE for surface motif highlights",
+  "silhouette": "MUST be one of: lehenga | saree | anarkali | sharara | kurti | mermaid | bodycon | cocktail | ballgown | corset | gown | bandhgala | tuxedo | sherwani | nehru | blazer",
+  "dressTypeLabel": "Concise title of the garment (e.g. Emerald Velvet Mermaid Gown)",
+  "fabric": "Fabric name from prompt (e.g. Silk Velvet, Banarasi Silk, Chiffon, Organza)",
+  "neckline": "MUST be one of: sweetheart | v-neck | off-shoulder | one-shoulder | halter | high-neck | square | boat | round",
+  "sleeve": "MUST be one of: sleeveless | off-shoulder | short | puff | bell | cape | three-quarter | long",
+  "pattern": "MUST be one of: zardozi | floral | mirror | sequin | pearl | chikankari | checks | minimal"
+}`,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    const isHex = (v: any) => typeof v === 'string' && /^#[0-9A-Fa-f]{6}$/.test(v.trim());
+
+    const customPalette: CustomColorHexPalette | undefined = isHex(parsed.primaryHex)
+      ? {
+          name: parsed.colorName || fallbackSpecs.color || 'Custom Couture Shade',
+          primary: parsed.primaryHex.trim(),
+          secondary: isHex(parsed.secondaryHex) ? parsed.secondaryHex.trim() : parsed.primaryHex.trim(),
+          highlight: isHex(parsed.highlightHex) ? parsed.highlightHex.trim() : '#FAF7F2',
+          deepShadow: isHex(parsed.deepShadowHex) ? parsed.deepShadowHex.trim() : '#1A1412',
+          accentMetallic: isHex(parsed.accentMetallicHex) ? parsed.accentMetallicHex.trim() : '#D4AF37',
+          embroidery: isHex(parsed.embroideryHex) ? parsed.embroideryHex.trim() : '#FFFDF9'
+        }
+      : undefined;
+
+    return {
+      customPalette,
+      silhouette: parsed.silhouette,
+      dressTypeLabel: parsed.dressTypeLabel,
+      colorName: parsed.colorName,
+      fabric: parsed.fabric,
+      neckline: parsed.neckline,
+      sleeve: parsed.sleeve,
+      pattern: parsed.pattern
+    };
+  } catch {
+    return {};
+  }
+}
+
 // Generate Dedicated AI Dress Image - Relevant, Color-Accurate & Angle-Specific
 app.post('/api/gemini/generate-image', async (req, res) => {
   try {
     const {
-      prompt,
+      prompt = '',
       dressType = 'Haute Couture Gown',
       color = 'Pearl Blush',
       fabric = 'Pure Silk',
@@ -513,6 +603,34 @@ app.post('/api/gemini/generate-image', async (req, res) => {
 
     const resolvedGender = resolveGender(req.body);
     const ai = getGeminiClient();
+
+    // 1. Parse customer prompt deterministically first so user prompt words always override stale defaults
+    const parsedFromPrompt = parseCustomerPromptToSpecs(prompt, {
+      gender: resolvedGender,
+      dressType,
+      color,
+      fabric,
+      neckline,
+      sleeve
+    });
+
+    // 2. Also query Gemini AI to extract exact hex color palette & silhouette blueprint from the customer prompt
+    const aiBlueprint = await extractVisualBlueprintWithGemini(ai, parsedFromPrompt.cleanPrompt || prompt, {
+      gender: parsedFromPrompt.gender,
+      dressType: parsedFromPrompt.dressType,
+      color: parsedFromPrompt.color,
+      fabric: parsedFromPrompt.fabric,
+      neckline: parsedFromPrompt.neckline,
+      sleeve: parsedFromPrompt.sleeve
+    });
+
+    const finalGender = parsedFromPrompt.gender;
+    const finalDressType = aiBlueprint.dressTypeLabel || parsedFromPrompt.dressType || dressType;
+    const finalColor = aiBlueprint.colorName || parsedFromPrompt.color || color;
+    const finalFabric = aiBlueprint.fabric || parsedFromPrompt.fabric || fabric;
+    const finalNeckline = aiBlueprint.neckline || parsedFromPrompt.neckline || neckline;
+    const finalSleeve = aiBlueprint.sleeve || parsedFromPrompt.sleeve || sleeve;
+    const finalPattern = aiBlueprint.pattern || parsedFromPrompt.pattern;
 
     const angleDescriptionsMen: Record<string, string> = {
       front: 'front full-length view showing bespoke tailored silhouette, lapel roll, and trouser drape',
@@ -528,55 +646,75 @@ app.post('/api/gemini/generate-image', async (req, res) => {
       detail: 'macro close-up shot focusing on artisan zardozi gold embroidery, pearl constellation, and textile weave texture'
     };
 
-    const angleContext = resolvedGender === 'men'
+    const angleContext = finalGender === 'men'
       ? (angleDescriptionsMen[angle] || angleDescriptionsMen.front)
       : (angleDescriptionsWomen[angle] || angleDescriptionsWomen.front);
 
-    const modelSubject = resolvedGender === 'men'
-      ? 'Distinguished handsome Indian male model, bespoke tailored royal'
-      : 'Graceful Indian female couture model, bespoke haute couture';
+    const effectivePrompt = parsedFromPrompt.cleanPrompt
+      ? `${parsedFromPrompt.cleanPrompt}, ${finalColor} ${finalDressType} in ${finalFabric}, ${angleContext}`
+      : `${finalColor} ${finalDressType} in ${finalFabric}, ${angleContext}`;
 
-    const editorialContext = resolvedGender === 'men'
-      ? 'GQ British fashion editorial, Savile Row precision tailoring, 8k resolution, cinematic studio lighting'
-      : 'Vogue India editorial bridal fashion photoshoot, luxury Indian designer craftsmanship, 8k resolution, cinematic studio lighting';
-
-    const effectivePrompt = prompt && prompt.trim().length > 3
-      ? `${prompt.trim()}, ${angleContext}, ${editorialContext}`
-      : `${modelSubject} ${color} ${dressType} in ${fabric}, ${angleContext}, ${editorialContext}`;
-
-    // Try Gemini Image Model first if available and not in quota cooldown
+    // 3. Try native Gemini Image Model if available
     if (ai && Date.now() >= geminiQuotaCooldownUntil) {
       const geminiImg = await generateImageWithGemini(ai, effectivePrompt, aspectRatio);
       if (geminiImg) {
         return res.json({
           imageUrl: geminiImg,
-          prompt: effectivePrompt,
-          gender: resolvedGender,
+          prompt: parsedFromPrompt.cleanPrompt || effectivePrompt,
+          gender: finalGender,
           model: 'gemini-3.1-flash-lite-image',
+          modelUsed: 'Gemini AI Image Synthesis',
           source: 'Gemini AI Atelier Engine',
+          extractedSpecs: {
+            dressType: finalDressType,
+            color: finalColor,
+            fabric: finalFabric,
+            neckline: finalNeckline,
+            sleeve: finalSleeve,
+            pattern: finalPattern
+          },
           isFree: true
         });
       }
     }
 
-    // Generate 100% relevant, color-accurate, silhouette-matched, angle-specific Couture Lookbook Visual
-    const bespokeSvgDataUri = generateCoutureSVGDataUri({
-      gender: resolvedGender,
-      dressType,
-      color,
-      fabric,
-      neckline,
-      sleeve,
-      prompt: effectivePrompt,
-      angle: (angle as 'front' | 'back' | 'side' | 'detail') || 'front'
-    });
+    // 4. Generate all 4 coordinated angles matching the exact customer prompt & AI hex blueprint
+    const visualSpecBase = {
+      gender: finalGender,
+      dressType: finalDressType,
+      color: finalColor,
+      fabric: finalFabric,
+      neckline: finalNeckline,
+      sleeve: finalSleeve,
+      pattern: finalPattern,
+      prompt: parsedFromPrompt.cleanPrompt || prompt,
+      customPalette: aiBlueprint.customPalette,
+      aiSilhouette: aiBlueprint.silhouette,
+      aiNeckline: aiBlueprint.neckline,
+      aiSleeve: aiBlueprint.sleeve,
+      aiPattern: aiBlueprint.pattern
+    };
+
+    const allCoordinatedAngles = generateCohesiveCoutureAngles(visualSpecBase);
+    const requestedAngleKey = (angle as 'front' | 'back' | 'side' | 'detail') || 'front';
+    const bespokeSvgDataUri = allCoordinatedAngles[requestedAngleKey] || allCoordinatedAngles.front;
 
     return res.json({
       imageUrl: bespokeSvgDataUri,
-      prompt: effectivePrompt,
-      gender: resolvedGender,
-      model: 'pearl-pick-couture-visualizer',
-      source: 'Bespoke Couture Visual Engine',
+      angles: allCoordinatedAngles,
+      prompt: parsedFromPrompt.cleanPrompt || effectivePrompt,
+      gender: finalGender,
+      model: aiBlueprint.customPalette ? 'gemini-3.1-flash-lite + couture-engine' : 'pearl-pick-couture-visualizer',
+      modelUsed: aiBlueprint.customPalette ? 'Gemini AI Prompt-to-Couture Synthesizer' : 'Bespoke Couture Visual Engine',
+      source: 'Gemini AI Prompt-to-Couture Synthesizer',
+      extractedSpecs: {
+        dressType: finalDressType,
+        color: finalColor,
+        fabric: finalFabric,
+        neckline: finalNeckline,
+        sleeve: finalSleeve,
+        pattern: finalPattern
+      },
       isFree: true
     });
   } catch (error: any) {
@@ -588,49 +726,68 @@ app.post('/api/gemini/generate-image', async (req, res) => {
 // Generate AI Dress Design Variations Endpoint
 app.post('/api/gemini/generate-dress', async (req, res) => {
   try {
-    const resolvedGender = resolveGender(req.body);
+    const rawPrompt = req.body?.prompt || '';
+    const initialGender = resolveGender(req.body);
 
-    const defaultDressType = resolvedGender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Bridal Lehenga & Choli';
-    const defaultOccasion = resolvedGender === 'men' ? 'Groom & Royal Baraat' : 'Indian Wedding & Reception';
-    const defaultFabric = resolvedGender === 'men' ? 'Pure Banarasi Raw Silk' : 'Pure Raw Silk';
-    const defaultColor = resolvedGender === 'men' ? 'Midnight Obsidian' : 'Rani Gulabi Pink';
-    const defaultSleeve = resolvedGender === 'men' ? 'French Tailored Cuffs' : 'Elbow-Length Embroidered';
-    const defaultNeckline = resolvedGender === 'men' ? 'Mandarin Bandhgala Collar' : 'Regal Paan Neck';
-    const defaultPattern = resolvedGender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Hand Zardozi & Dabka Gold';
+    // 1. Parse customer prompt FIRST so what the customer typed in the prompt box drives the generated image!
+    const parsedPromptSpecs = parseCustomerPromptToSpecs(rawPrompt, {
+      gender: initialGender,
+      dressType: req.body?.dressType,
+      color: req.body?.color,
+      fabric: req.body?.fabric,
+      neckline: req.body?.neckline,
+      sleeve: req.body?.sleeve,
+      occasion: req.body?.occasion
+    });
 
-    const { 
-      dressType = defaultDressType, 
-      occasion = defaultOccasion, 
-      fabric = defaultFabric, 
-      color = defaultColor, 
-      sleeve = defaultSleeve, 
-      neckline = defaultNeckline, 
-      pattern = defaultPattern, 
+    const resolvedGender = parsedPromptSpecs.gender;
+    const ai = getGeminiClient();
+
+    // 2. Also ask Gemini AI to extract exact hex color palette & silhouette from the customer's prompt
+    const aiBlueprint = await extractVisualBlueprintWithGemini(
+      ai,
+      parsedPromptSpecs.cleanPrompt || rawPrompt,
+      {
+        gender: resolvedGender,
+        dressType: parsedPromptSpecs.dressType,
+        color: parsedPromptSpecs.color,
+        fabric: parsedPromptSpecs.fabric,
+        neckline: parsedPromptSpecs.neckline,
+        sleeve: parsedPromptSpecs.sleeve
+      }
+    );
+
+    const dressType = aiBlueprint.dressTypeLabel || parsedPromptSpecs.dressType || req.body?.dressType || (resolvedGender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Haute Couture Gown');
+    const occasion = req.body?.occasion || (resolvedGender === 'men' ? 'Groom & Royal Baraat' : 'Indian Wedding & Reception');
+    const fabric = aiBlueprint.fabric || parsedPromptSpecs.fabric || req.body?.fabric || (resolvedGender === 'men' ? 'Pure Banarasi Raw Silk' : 'Pure Mulberry Silk');
+    const color = aiBlueprint.colorName || parsedPromptSpecs.color || req.body?.color || (resolvedGender === 'men' ? 'Midnight Obsidian' : 'Pearl Blush');
+    const sleeve = parsedPromptSpecs.sleeve || req.body?.sleeve || (resolvedGender === 'men' ? 'French Tailored Cuffs' : 'Fitted Couture Sleeves');
+    const neckline = parsedPromptSpecs.neckline || req.body?.neckline || (resolvedGender === 'men' ? 'Mandarin Bandhgala Collar' : 'Sculpted Sweetheart');
+    const pattern = parsedPromptSpecs.pattern || req.body?.pattern || 'Hand Zardozi & Dabka Gold';
+
+    const {
       waistStyle = resolvedGender === 'men' ? 'Structured English Waist' : 'Corseted Basque',
       backDesign = resolvedGender === 'men' ? 'Double Side Vents' : 'Deep U with Latkan Dori',
       length = resolvedGender === 'men' ? 'Jacket Hip Length (30")' : 'Floor-Sweeping (44")',
-      embroidery = resolvedGender === 'men' ? 'Collar Dabka Gold Bullion' : 'Authentic 24K Dabka Zardozi',
+      embroidery = pattern,
       accessories = resolvedGender === 'men' ? 'Matching Pocket Square & Brooch' : 'Matching Embroidered Dupatta & Potli',
       borderDesign = resolvedGender === 'men' ? 'Hand-Pick Stitched AMF Edge' : 'Scalloped Zari Temple Border',
       lining = resolvedGender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Pure Cotton Mulmul (Breathable)',
       fit = 'Bespoke Tailored Regular',
-      style = resolvedGender === 'men' ? 'Imperial Rajputana Suiting' : 'Royal Heritage Rajputana',
-      budget = resolvedGender === 'men' ? '₹38,000' : '₹35,000',
-      prompt = '' 
+      style = resolvedGender === 'men' ? 'Imperial Rajputana Suiting' : 'Royal Heritage Couture',
+      budget = resolvedGender === 'men' ? '₹38,000' : '₹35,000'
     } = req.body;
 
-    const ai = getGeminiClient();
+    const cleanCustomerPrompt = parsedPromptSpecs.cleanPrompt || rawPrompt;
 
-    // Select cohesive asset pack matching the garment category and gender
-    const cohesiveAssets = getCohesiveAssets(resolvedGender, dressType);
-
-    let variationsData = null;
+    let variationsData: any = null;
 
     if (ai) {
       try {
         const systemPrompt = resolvedGender === 'men'
           ? `You are an elite master bespoke menswear atelier and royal darzi design director for "PEARL PICK!".
-Generate 2 bespoke men's luxury tailoring design variations based on these specifications:
+Generate 2 bespoke men's luxury tailoring design variations strictly matching the customer's prompt:
+- Customer Prompt: "${cleanCustomerPrompt}"
 - Garment Type: ${dressType}
 - Occasion: ${occasion}
 - Fabric: ${fabric}
@@ -638,13 +795,10 @@ Generate 2 bespoke men's luxury tailoring design variations based on these speci
 - Sleeve Style: ${sleeve}
 - Collar/Lapel: ${neckline}
 - Embellishment/Pattern: ${pattern}
-- Additional Prompt: "${prompt}"
-
-Focus strictly on MASACULINE tailoring (canvas chest piece, shoulder line, armhole, vents, pocket square, breeches/trousers). Do NOT include bridal lehenga, choli, or dupatta details.
 
 Return JSON matching this exact structure:
 {
-  "title": "Bespoke Royal Indian Menswear Title",
+  "title": "Bespoke Menswear Title matching Customer Prompt",
   "variations": [
     {
       "name": "Variation 1 Title",
@@ -667,11 +821,7 @@ Return JSON matching this exact structure:
       ],
       "colorPsychology": "Significance of this color in royal menswear",
       "estimatedCraftTimeDays": 14,
-      "estimatedPriceRange": {
-        "min": 32000,
-        "max": 48000,
-        "currency": "INR"
-      }
+      "estimatedPriceRange": { "min": 32000, "max": 48000, "currency": "INR" }
     },
     {
       "name": "Variation 2 Title",
@@ -692,16 +842,13 @@ Return JSON matching this exact structure:
       ],
       "colorPsychology": "Aesthetic impact",
       "estimatedCraftTimeDays": 12,
-      "estimatedPriceRange": {
-        "min": 28000,
-        "max": 44000,
-        "currency": "INR"
-      }
+      "estimatedPriceRange": { "min": 28000, "max": 44000, "currency": "INR" }
     }
   ]
 }`
-          : `You are a master Indian haute couture design director for "PEARL PICK!".
-Generate 2 bespoke Indian couture dress design variations based on these specifications:
+          : `You are a master haute couture design director for "PEARL PICK!".
+Generate 2 bespoke couture dress design variations strictly matching the customer's prompt:
+- Customer Prompt: "${cleanCustomerPrompt}"
 - Dress Type: ${dressType}
 - Occasion: ${occasion}
 - Fabric: ${fabric}
@@ -709,48 +856,43 @@ Generate 2 bespoke Indian couture dress design variations based on these specifi
 - Sleeve Style: ${sleeve}
 - Neckline: ${neckline}
 - Pattern/Embellishment: ${pattern}
-- Additional Prompt: "${prompt}"
 
 Return JSON matching this exact structure:
 {
-  "title": "Bespoke Royal Indian Design Name",
+  "title": "Bespoke Dress Title matching Customer Prompt",
   "variations": [
     {
       "name": "Variation 1 Title",
-      "tagline": "Poetic design summary (1 sentence)",
+      "tagline": "Poetic design summary matching the customer prompt (1 sentence)",
       "fabricDetails": {
         "primary": "Detailed fabric name with weave and weight (GSM)",
         "lining": "Lining fabric specification (e.g., Pure Cotton Mulmul / Satin)",
-        "embellishments": "Hand Zardozi / Dabka / Gota Patti / Resham details",
+        "embellishments": "Surface embroidery and beadwork details",
         "estimatedYards": 7.5,
-        "recommendedWeightGsm": 360
+        "recommendedWeightGsm": 320
       },
       "tailorNotes": [
-        "Include 2.5-inch side margin inside choli/bodice for alterations",
+        "Include 2.5-inch side margin inside bodice for alterations",
         "Technical sewing instruction 2",
         "Technical sewing instruction 3"
       ],
       "stylingTips": [
-        "Jewelry recommendation (e.g. Polki, Kundan choker, Chandbalis)",
-        "Footwear and dupatta draping advice"
+        "Jewelry recommendation",
+        "Footwear and draping advice"
       ],
-      "colorPsychology": "Significance of this color in Indian celebrations",
+      "colorPsychology": "Significance of this color",
       "estimatedCraftTimeDays": 16,
-      "estimatedPriceRange": {
-        "min": 28000,
-        "max": 48000,
-        "currency": "INR"
-      }
+      "estimatedPriceRange": { "min": 28000, "max": 48000, "currency": "INR" }
     },
     {
       "name": "Variation 2 Title",
       "tagline": "Alternative interpretation tagline",
       "fabricDetails": {
-        "primary": "Alternative luxury Indian fabric",
+        "primary": "Alternative luxury fabric",
         "lining": "Alternative lining",
         "embellishments": "Alternative embellishment",
         "estimatedYards": 6.0,
-        "recommendedWeightGsm": 320
+        "recommendedWeightGsm": 280
       },
       "tailorNotes": [
         "Include side alteration margins",
@@ -761,11 +903,7 @@ Return JSON matching this exact structure:
       ],
       "colorPsychology": "Aesthetic impact explanation",
       "estimatedCraftTimeDays": 12,
-      "estimatedPriceRange": {
-        "min": 22000,
-        "max": 38000,
-        "currency": "INR"
-      }
+      "estimatedPriceRange": { "min": 22000, "max": 38000, "currency": "INR" }
     }
   ]
 }`;
@@ -778,117 +916,65 @@ Return JSON matching this exact structure:
         });
 
         variationsData = JSON.parse(response.text || '{}');
-      } catch (err: any) {
+      } catch {
         variationsData = null;
       }
     }
 
     // Fallback if Gemini is offline or failed
     if (!variationsData || !variationsData.variations || variationsData.variations.length === 0) {
-      if (resolvedGender === 'men') {
-        variationsData = {
-          title: `Royal ${color} Bespoke ${dressType}`,
-          variations: [
-            {
-              name: `The Imperial ${color} ${dressType}`,
-              tagline: `Hand-tailored ${fabric} with ${neckline} and regal ${pattern}`,
-              fabricDetails: {
-                primary: `${fabric} (360 GSM)`,
-                lining: `Cupro Anti-Static Bemberg Lining`,
-                embellishments: `${pattern} handcrafted with metallic gold accents`,
-                estimatedYards: 5.5,
-                recommendedWeightGsm: 360
-              },
-              tailorNotes: [
-                `Construct full floating horsehair canvas chest piece for lasting sculptural drape.`,
-                `Reinforce ${neckline} with internal canvas so it maintains crisp royal posture.`,
-                `2-inch interior alteration allowance across chest, waist, and trousers.`
-              ],
-              stylingTips: [
-                `Pair with an uncut emerald polki brooch and hand-rolled silk pocket square.`,
-                `Ideal with handcrafted velvet juttis or Oxford leather shoes.`
-              ],
-              colorPsychology: `${color} conveys sovereign dignity, prestige, and majestic authority.`,
-              estimatedCraftTimeDays: 14,
-              estimatedPriceRange: { min: 32000, max: 48000, currency: 'INR' }
+      variationsData = {
+        title: `${color} ${dressType}`,
+        variations: [
+          {
+            name: `The Signature ${color} ${dressType}`,
+            tagline: cleanCustomerPrompt || `Hand-sculpted ${fabric} ${dressType} with ${neckline} and ${sleeve}`,
+            fabricDetails: {
+              primary: `${fabric} (Master Loom)`,
+              lining: resolvedGender === 'men' ? 'Cupro Anti-Static Bemberg Lining' : 'Pure Cotton Mulmul Breathable Lining',
+              embellishments: pattern,
+              estimatedYards: resolvedGender === 'men' ? 5.5 : 7.5,
+              recommendedWeightGsm: 320
             },
-            {
-              name: `The Modern Heritage ${dressType}`,
-              tagline: `Contemporary architectural cut with ${sleeve} in rich ${color}`,
-              fabricDetails: {
-                primary: `Italian Weave & ${fabric}`,
-                lining: `Breathable Cupro Twill`,
-                embellishments: `Subtle tonal pick-stitching and bespoke brass buttons`,
-                estimatedYards: 5.5,
-                recommendedWeightGsm: 320
-              },
-              tailorNotes: [
-                `Hand-basted shoulder padding aligned to personal posture profile.`,
-                `Twin side vents and concealed pocket facing with interior button stay.`
-              ],
-              stylingTips: [
-                `Minimalist platinum cufflinks and slim silk bandhgala stole.`
-              ],
-              colorPsychology: `${color} creates a distinguished commanding presence at evening galas.`,
-              estimatedCraftTimeDays: 12,
-              estimatedPriceRange: { min: 28000, max: 42000, currency: 'INR' }
-            }
-          ]
-        };
-      } else {
-        variationsData = {
-          title: `Royal ${color} Bespoke ${dressType}`,
-          variations: [
-            {
-              name: `The Maharani Edition ${dressType}`,
-              tagline: `Hand-sculpted ${fabric} with ${neckline} and regal ${pattern}`,
-              fabricDetails: {
-                primary: `${fabric} (360 GSM)`,
-                lining: `Pure Cotton Mulmul Breathable Lining`,
-                embellishments: `${pattern} handcrafted with metallic gold accents`,
-                estimatedYards: 7.5,
-                recommendedWeightGsm: 360
-              },
-              tailorNotes: [
-                `Construct reinforced choli/bodice with 2.5-inch internal alteration allowance.`,
-                `Reinforce ${neckline} neckline with bias canvas so it rests perfectly on the decolletage.`,
-                `Apply ${sleeve} with flexible underarm gussets for effortless movement.`
-              ],
-              stylingTips: [
-                `Pair with antique 22K gold Kundan choker and mathapatti.`,
-                `Ideal with embroidered juttis and organza dupatta with scalloped borders.`
-              ],
-              colorPsychology: `${color} conveys auspicious prosperity, celebration, and royal majesty in Indian culture.`,
-              estimatedCraftTimeDays: 16,
-              estimatedPriceRange: { min: 32000, max: 48000, currency: 'INR' }
+            tailorNotes: [
+              `Construct reinforced bodice with 2.5-inch internal alteration allowance.`,
+              `Tailor ${neckline} and ${sleeve} to exact 14-point customer measurements.`,
+              `Finish hemline with horsehair braid for sculptural movement.`
+            ],
+            stylingTips: [
+              `Pair with statement heirloom jewelry and bespoke footwear.`,
+              `Crafted specifically for ${occasion}.`
+            ],
+            colorPsychology: `${color} conveys sophistication, celebration, and timeless couture poise.`,
+            estimatedCraftTimeDays: 14,
+            estimatedPriceRange: { min: 26000, max: 45000, currency: 'INR' }
+          },
+          {
+            name: `The Atelier Edition ${color} ${dressType}`,
+            tagline: `Contemporary architectural drape in ${color} ${fabric} with ${sleeve}`,
+            fabricDetails: {
+              primary: `${fabric}`,
+              lining: `Soft Cupro Habotai`,
+              embellishments: pattern,
+              estimatedYards: 6.0,
+              recommendedWeightGsm: 280
             },
-            {
-              name: `The Contemporary Darbar ${dressType}`,
-              tagline: `Sleek architectural drape with ${sleeve} in luminous ${color}`,
-              fabricDetails: {
-                primary: `Pure Brocade & ${fabric}`,
-                lining: `Soft Cupro Habotai`,
-                embellishments: `Subtle tonal resham and micro-mirror hand borders`,
-                estimatedYards: 5.5,
-                recommendedWeightGsm: 300
-              },
-              tailorNotes: [
-                `Precision kalis cut along grain with hidden concealed side zipper.`,
-                `Hand-rolled double-fold hem with reinforced horsehair or can-can mesh.`
-              ],
-              stylingTips: [
-                `Statement chaandbalis and layered emerald cocktail ring.`
-              ],
-              colorPsychology: `${color} creates a breathtaking festive presence under wedding chandeliers.`,
-              estimatedCraftTimeDays: 12,
-              estimatedPriceRange: { min: 24000, max: 36000, currency: 'INR' }
-            }
-          ]
-        };
-      }
+            tailorNotes: [
+              `Precision panels cut along grain with concealed closure.`,
+              `Hand-finished French seams throughout.`
+            ],
+            stylingTips: [
+              `Minimalist contemporary styling for evening receptions.`
+            ],
+            colorPsychology: `${color} creates a radiant silhouette under ambient lighting.`,
+            estimatedCraftTimeDays: 12,
+            estimatedPriceRange: { min: 22000, max: 38000, currency: 'INR' }
+          }
+        ]
+      };
     }
 
-    // Map variations with 100% relevant, color-accurate, silhouette-matched 4-angle visuals (Front, Back, Side, Detail)
+    // Map variations with 100% prompt-faithful, color-accurate, silhouette-matched 4-angle visuals (Front, Back, Side, Detail)
     const variationsWithAssets = variationsData.variations.map((v: any, index: number) => {
       const variationAngles = generateCohesiveCoutureAngles({
         gender: resolvedGender,
@@ -899,13 +985,18 @@ Return JSON matching this exact structure:
         sleeve,
         pattern: v.fabricDetails?.embellishments || pattern,
         occasion,
-        prompt
+        prompt: cleanCustomerPrompt,
+        customPalette: aiBlueprint.customPalette,
+        aiSilhouette: aiBlueprint.silhouette,
+        aiNeckline: aiBlueprint.neckline,
+        aiSleeve: aiBlueprint.sleeve,
+        aiPattern: aiBlueprint.pattern
       });
 
       return {
         id: `var-${Date.now()}-${index + 1}`,
         name: v.name || `${color} ${dressType} — Edition ${index + 1}`,
-        tagline: v.tagline || `Bespoke ${dressType} in ${fabric} (${color}) for ${occasion}`,
+        tagline: v.tagline || cleanCustomerPrompt || `Bespoke ${dressType} in ${fabric} (${color})`,
         frontImageUrl: variationAngles.front,
         backImageUrl: variationAngles.back,
         sideImageUrl: variationAngles.side,
@@ -943,8 +1034,8 @@ Return JSON matching this exact structure:
       id: `design-${Date.now()}`,
       customerId: 'cust-1',
       customerName: 'Ananya Verma',
-      title: variationsData.title || `Bespoke ${color} ${dressType}`,
-      prompt: prompt || `Custom ${dressType} in ${fabric} (${color}) for ${occasion}`,
+      title: variationsData.title || `${color} ${dressType}`,
+      prompt: cleanCustomerPrompt || `Custom ${color} ${dressType} in ${fabric} for ${occasion}`,
       createdAt: new Date().toISOString(),
       isFavorite: false,
       selectedVariationIndex: 0,
@@ -955,60 +1046,69 @@ Return JSON matching this exact structure:
     res.json(resultDressDesign);
   } catch (error: any) {
     console.warn('Notice in dress generation, using bespoke fallback:', error?.message || error);
-    const resolvedGender = resolveGender(req.body);
-    const fallbackAngles = generateCohesiveCoutureAngles({
-      gender: resolvedGender,
-      dressType: req.body?.dressType || (resolvedGender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Haute Couture Gown'),
-      color: req.body?.color || (resolvedGender === 'men' ? 'Midnight Obsidian' : 'Pearl Blush'),
-      fabric: req.body?.fabric || (resolvedGender === 'men' ? 'Pure Raw Silk' : 'Mulberry Silk Organza'),
+    const parsedFallback = parseCustomerPromptToSpecs(req.body?.prompt || '', {
+      gender: resolveGender(req.body),
+      dressType: req.body?.dressType,
+      color: req.body?.color,
+      fabric: req.body?.fabric,
       neckline: req.body?.neckline,
-      sleeve: req.body?.sleeve,
-      prompt: req.body?.prompt
+      sleeve: req.body?.sleeve
+    });
+    const fallbackAngles = generateCohesiveCoutureAngles({
+      gender: parsedFallback.gender,
+      dressType: parsedFallback.dressType,
+      color: parsedFallback.color,
+      fabric: parsedFallback.fabric,
+      neckline: parsedFallback.neckline,
+      sleeve: parsedFallback.sleeve,
+      pattern: parsedFallback.pattern,
+      prompt: parsedFallback.cleanPrompt
     });
     res.json({
       id: `design-fallback-${Date.now()}`,
       customerId: 'cust-1',
       customerName: 'Ananya Verma',
-      title: `Bespoke ${req.body?.color || 'Royal'} ${req.body?.dressType || (resolvedGender === 'men' ? 'Bandhgala' : 'Couture Gown')}`,
-      prompt: req.body?.prompt || 'Custom bespoke haute couture dress design',
+      title: `${parsedFallback.color} ${parsedFallback.dressType}`,
+      prompt: parsedFallback.cleanPrompt || 'Custom bespoke haute couture dress design',
       createdAt: new Date().toISOString(),
       isFavorite: false,
       selectedVariationIndex: 0,
-      tags: [resolvedGender === 'men' ? 'Menswear' : 'Womenswear', req.body?.occasion || 'Gala', req.body?.dressType || 'Couture', req.body?.color || 'Royal'],
+      tags: [parsedFallback.gender === 'men' ? 'Menswear' : 'Womenswear', parsedFallback.dressType, parsedFallback.color],
       variations: [
         {
           id: `var-fb-1`,
-          name: `The Atelier Signature ${req.body?.color || ''} ${req.body?.dressType || (resolvedGender === 'men' ? 'Bandhgala' : 'Gown')}`.trim(),
-          tagline: 'Hand-sculpted couture silhouette with master tailor finishing',
+          name: `The Atelier Signature ${parsedFallback.color} ${parsedFallback.dressType}`,
+          tagline: parsedFallback.cleanPrompt || 'Hand-sculpted couture silhouette with master tailor finishing',
           frontImageUrl: fallbackAngles.front,
           backImageUrl: fallbackAngles.back,
           sideImageUrl: fallbackAngles.side,
           detailImageUrl: fallbackAngles.detail,
           fabricDetails: {
-            primary: req.body?.fabric || (resolvedGender === 'men' ? 'Pure Raw Silk' : 'Mulberry Silk Organza'),
-            lining: resolvedGender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Pure Cotton Mulmul (Breathable)',
-            embellishments: resolvedGender === 'men' ? 'Hand Zardozi Gold Bullion' : 'Hand Zardozi & Artisan Resham Gold',
-            estimatedYards: resolvedGender === 'men' ? 5.5 : 7.5,
+            primary: parsedFallback.fabric,
+            lining: parsedFallback.gender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Pure Cotton Mulmul (Breathable)',
+            embellishments: parsedFallback.pattern,
+            estimatedYards: parsedFallback.gender === 'men' ? 5.5 : 7.5,
             recommendedWeightGsm: 340
           },
-          tailorNotes: resolvedGender === 'men'
-            ? [
-                'Full floating horsehair canvas chest piece',
-                '2-inch alteration allowance on lateral seams',
-                'Pick-stitched lapels and hand-attached horn buttons'
-              ]
-            : [
-                '2.5-inch internal alteration allowance on all lateral bodice seams',
-                'Hidden grosgrain waist stay for ergonomic weight distribution',
-                'Horsehair braid hem finish for fluid sculptural drape'
-              ],
-          stylingTips: resolvedGender === 'men'
-            ? ['Pair with an antique brooch and hand-rolled silk pocket square']
-            : ['Pair with heirloom Polki or antique Kundan jewelry', 'Lightweight champagne veil or matching embroidered dupatta'],
+          tailorNotes: [
+            '2.5-inch internal alteration allowance on all lateral bodice seams',
+            'Hidden grosgrain waist stay for ergonomic weight distribution',
+            'Horsehair braid hem finish for fluid sculptural drape'
+          ],
+          stylingTips: ['Pair with heirloom Polki or antique Kundan jewelry'],
           colorPsychology: 'Auspicious elegance and regal poise',
           estimatedCraftTimeDays: 14,
           estimatedPriceRange: { min: 28000, max: 42000, currency: 'INR' },
-          specs: { ...req.body, gender: resolvedGender }
+          specs: {
+            ...req.body,
+            gender: parsedFallback.gender,
+            dressType: parsedFallback.dressType,
+            color: parsedFallback.color,
+            fabric: parsedFallback.fabric,
+            neckline: parsedFallback.neckline,
+            sleeve: parsedFallback.sleeve,
+            pattern: parsedFallback.pattern
+          }
         }
       ]
     });

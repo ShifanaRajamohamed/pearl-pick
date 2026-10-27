@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { DressDesign, DressDesignVariation, MeasurementSheet } from '../../types';
-import { generateCohesiveCoutureAngles, generateCoutureSVGDataUri } from '../../services/coutureVisualEngine';
+import { generateCohesiveCoutureAngles, generateCoutureSVGDataUri, parseCustomerPromptToSpecs } from '../../services/coutureVisualEngine';
 
 interface GeneratedDesignViewerProps {
   design: DressDesign;
@@ -241,17 +241,26 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
     calcGarmentLengthIn
   ]);
 
-  // Guarantee 100% cohesive, distinct, silhouette-accurate 4-angle visuals even for pre-saved designs
+  // Guarantee 100% cohesive, distinct, silhouette-accurate 4-angle visuals matching the customer prompt
   const cohesiveFallbackAngles = React.useMemo(() => {
-    return generateCohesiveCoutureAngles({
+    const parsed = parseCustomerPromptToSpecs(design.prompt || '', {
       gender: isMenDesign ? 'men' : 'women',
       dressType: currentVar.specs?.dressType || design.title,
       color: currentVar.specs?.color || (isMenDesign ? 'Kashi Midnight Obsidian' : 'Pearl blush'),
       fabric: currentVar.specs?.fabric || currentVar.fabricDetails?.primary || (isMenDesign ? 'Pure Banarasi Raw Silk' : 'Silk Organza'),
       neckline: currentVar.specs?.neckline,
       sleeve: currentVar.specs?.sleeve,
-      pattern: currentVar.specs?.pattern,
-      title: currentVar.name || design.title,
+      pattern: currentVar.specs?.pattern
+    });
+    return generateCohesiveCoutureAngles({
+      gender: parsed.gender,
+      dressType: parsed.dressType,
+      color: parsed.color,
+      fabric: parsed.fabric,
+      neckline: parsed.neckline,
+      sleeve: parsed.sleeve,
+      pattern: parsed.pattern,
+      title: currentVar.name || parsed.title || design.title,
       prompt: design.prompt
     });
   }, [currentVar, design.title, design.prompt, isMenDesign]);
@@ -259,8 +268,8 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
   const currentCustomKey = `${selectedVarIndex}-${activeAngle}`;
   const customImage = customImages[currentCustomKey];
 
-  // If the variation already has bespoke SVG data URIs, use them; if its back/side/detail are duplicate or generic Unsplash URLs, use cohesiveFallbackAngles so every angle (Front, Back, Side, Macro Detail) is distinct and relevant!
-  const isDataUri = (url?: string) => Boolean(url && url.startsWith('data:image/svg+xml'));
+  // Accept any valid data URI (PNG, JPEG, WebP from Gemini API or bespoke SVG data URI)
+  const isDataUri = (url?: string) => Boolean(url && url.startsWith('data:image/'));
   const currentImage = customImage || (
     activeAngle === 'front'
       ? (isDataUri(currentVar.frontImageUrl) ? currentVar.frontImageUrl : cohesiveFallbackAngles.front)
@@ -274,11 +283,11 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
   const handleGenerateGeminiImage = async (customPromptToUse?: string) => {
     setIsGeneratingGeminiImage(true);
     setViewerSynthesisStage(1);
-    setImageGenerationStatus('Mapping couture silhouette & injecting high-fashion keywords...');
+    setImageGenerationStatus('Parsing your prompt & extracting silhouette, color, and textile specs...');
 
     const stageTimer1 = setTimeout(() => {
       setViewerSynthesisStage(2);
-      setImageGenerationStatus('Synthesizing bespoke textile weave & lighting geometry...');
+      setImageGenerationStatus('Synthesizing bespoke textile weave & 4-angle lighting geometry...');
     }, 350);
 
     const stageTimer2 = setTimeout(() => {
@@ -291,6 +300,16 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
     const promptText = (customPromptToUse || geminiPrompt).trim() || 
       `${currentVar.name || design.title}, couture, high-fashion, macro-detail, luxury Indian haute couture fashion photography, ${activeAngle} angle view`;
 
+    const parsedPromptSpecs = parseCustomerPromptToSpecs(promptText, {
+      gender: isMenDesign ? 'men' : 'women',
+      dressType: currentVar.specs?.dressType || design.title,
+      color: currentVar.specs?.color || (isMenDesign ? 'Kashi Midnight Obsidian' : 'Pearl blush'),
+      fabric: currentVar.specs?.fabric || (isMenDesign ? 'Pure Raw Silk' : 'Silk Organza'),
+      neckline: currentVar.specs?.neckline,
+      sleeve: currentVar.specs?.sleeve,
+      pattern: currentVar.specs?.pattern
+    });
+
     try {
       const [res] = await Promise.all([
         fetch('/api/gemini/generate-image', {
@@ -298,13 +317,13 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: promptText,
-            gender: isMenDesign ? 'men' : 'women',
+            gender: parsedPromptSpecs.gender,
             angle: activeAngle,
-            dressType: currentVar.specs?.dressType || design.title,
-            color: promptText,
-            fabric: currentVar.specs?.fabric || (isMenDesign ? 'Pure Raw Silk' : 'Silk Organza'),
-            neckline: currentVar.specs?.neckline,
-            sleeve: currentVar.specs?.sleeve,
+            dressType: parsedPromptSpecs.dressType,
+            color: parsedPromptSpecs.color,
+            fabric: parsedPromptSpecs.fabric,
+            neckline: parsedPromptSpecs.neckline,
+            sleeve: parsedPromptSpecs.sleeve,
             aspectRatio: '3:4'
           })
         }),
@@ -318,10 +337,18 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
       if (data && data.imageUrl) {
         setCustomImages((prev) => ({
           ...prev,
+          ...(data.angles ? {
+            [`${selectedVarIndex}-front`]: data.angles.front,
+            [`${selectedVarIndex}-back`]: data.angles.back,
+            [`${selectedVarIndex}-side`]: data.angles.side,
+            [`${selectedVarIndex}-detail`]: data.angles.detail
+          } : {}),
           [currentCustomKey]: data.imageUrl
         }));
-        setImageModelUsed(data.modelUsed || 'Bespoke Couture Visual Engine');
-        setImageGenerationStatus(`Updated ${activeAngle.toUpperCase()} view to match "${promptText.slice(0, 48)}..."`);
+        setImageModelUsed(data.modelUsed || 'Gemini AI + Bespoke Couture Engine');
+        setImageGenerationStatus(
+          `Generated ${parsedPromptSpecs.color} ${parsedPromptSpecs.dressType} (${parsedPromptSpecs.fabric}) matching your prompt!`
+        );
         setShowGeminiStudio(false);
         setIsGeneratingGeminiImage(false);
         setViewerSynthesisStage(0);
@@ -333,23 +360,29 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
       console.warn('Image generation fallback:', err);
     }
 
-    // Client-side deterministic synthesis if offline
-    const localRender = generateCoutureSVGDataUri({
-      gender: isMenDesign ? 'men' : 'women',
-      dressType: promptText + ' ' + (currentVar.specs?.dressType || design.title),
-      color: promptText + ' ' + (currentVar.specs?.color || ''),
-      fabric: currentVar.specs?.fabric || 'Pure Silk',
-      neckline: currentVar.specs?.neckline,
-      sleeve: currentVar.specs?.sleeve,
-      angle: activeAngle,
-      title: currentVar.name || design.title,
+    // Client-side prompt-faithful synthesis if offline
+    const localAngles = generateCohesiveCoutureAngles({
+      gender: parsedPromptSpecs.gender,
+      dressType: parsedPromptSpecs.dressType,
+      color: parsedPromptSpecs.color,
+      fabric: parsedPromptSpecs.fabric,
+      neckline: parsedPromptSpecs.neckline,
+      sleeve: parsedPromptSpecs.sleeve,
+      pattern: parsedPromptSpecs.pattern,
+      title: parsedPromptSpecs.title,
       prompt: promptText
     });
     setCustomImages((prev) => ({
       ...prev,
-      [currentCustomKey]: localRender
+      [`${selectedVarIndex}-front`]: localAngles.front,
+      [`${selectedVarIndex}-back`]: localAngles.back,
+      [`${selectedVarIndex}-side`]: localAngles.side,
+      [`${selectedVarIndex}-detail`]: localAngles.detail,
+      [currentCustomKey]: localAngles[activeAngle]
     }));
-    setImageGenerationStatus(`Updated ${activeAngle.toUpperCase()} view to match your requirements!`);
+    setImageGenerationStatus(
+      `Generated ${parsedPromptSpecs.color} ${parsedPromptSpecs.dressType} matching your prompt!`
+    );
     setShowGeminiStudio(false);
     setIsGeneratingGeminiImage(false);
     setViewerSynthesisStage(0);
