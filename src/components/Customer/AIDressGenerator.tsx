@@ -9,10 +9,12 @@ import {
   Camera, 
   PenTool, 
   Eye, 
-  Package
+  Package,
+  Wand2
 } from 'lucide-react';
 import { DressDesign } from '../../types';
 import { FabricSwatchGallery, PREDEFINED_FABRICS } from './FabricSwatchGallery';
+import { generateCohesiveCoutureAngles } from '../../services/coutureVisualEngine';
 
 interface AIDressGeneratorProps {
   onDesignGenerated: (design: DressDesign) => void;
@@ -25,6 +27,7 @@ interface AIDressGeneratorProps {
   latestConcept?: DressDesign;
   gender?: 'women' | 'men';
   onGenderChange?: (gender: 'women' | 'men') => void;
+  onOpenFabricLibrary?: () => void;
 }
 
 export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
@@ -37,7 +40,8 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   initialDressType,
   latestConcept,
   gender = 'women',
-  onGenderChange
+  onGenderChange,
+  onOpenFabricLibrary
 }) => {
   // Primary Attributes State
   const [dressType, setDressType] = useState<string>(
@@ -55,12 +59,13 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   
   // Secondary Attributes in "More Options"
   const [sleeves, setSleeves] = useState<string>(
-    gender === 'men' ? 'French Tailored Cuffs' : 'Long'
+    gender === 'men' ? 'French Tailored Cuffs' : 'Long sheer'
   );
   const [neckStyle, setNeckStyle] = useState<string>(
     gender === 'men' ? 'Mandarin Bandhgala Collar' : 'Sweetheart'
   );
   const [showMoreOptions, setShowMoreOptions] = useState<boolean>(false);
+  const [previewAngle, setPreviewAngle] = useState<'front' | 'back' | 'side' | 'detail'>('front');
 
   // Upload States
   const [sketchFile, setSketchFile] = useState<string | null>(null);
@@ -79,6 +84,71 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   const [prompt, setPrompt] = useState<string>(initialPrompt || defaultPrompt);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [generationStage, setGenerationStage] = useState<number>(0);
+
+  // Structured Prompt Builder State: injects dress-type-specific style keywords ('couture', 'high-fashion', 'macro-detail', etc.)
+  const DRESS_TYPE_STYLE_KEYWORDS: Record<string, string[]> = React.useMemo(() => ({
+    // Women's Couture Dress Types
+    'Gown': ['couture', 'high-fashion', 'macro-detail', 'floor-sweeping train', 'sculpted boned bodice', 'French bias drape', 'editorial runway lighting'],
+    'Lehenga': ['couture', 'high-fashion', 'macro-detail', '16-kali royal flare', '24K zardozi border', 'sculpted choli', 'scalloped organza dupatta'],
+    'Anarkali': ['couture', 'high-fashion', 'macro-detail', 'floor-grazing kalidar panels', 'Mughal jari work', 'architectural ghera', 'hand-knotted tassels'],
+    'Saree Gown': ['couture', 'high-fashion', 'macro-detail', 'pre-pleated pallu drape', 'structured corset blouse', 'metallic kasab border', 'sculptural silhouette'],
+    'Corset Dress': ['couture', 'high-fashion', 'macro-detail', 'spiral steel boning', 'contoured bustier', 'draped silk overskirt', 'atelier stitch precision'],
+    'Empire Silhouette': ['couture', 'high-fashion', 'macro-detail', 'raised empire waistline', 'elongated columnar fall', 'pearl constellation applique', 'fluid chiffon train'],
+    // Men's Bespoke Dress Types
+    'Royal Jodhpuri Bandhgala': ['couture', 'high-fashion', 'macro-detail', 'stiffened mandarin collar', 'hand-padded roped shoulders', 'heritage horn buttons', 'bespoke equestrian cut'],
+    'Savile Row 3-Piece Tuxedo': ['couture', 'high-fashion', 'macro-detail', 'floating horsehair canvas', 'satin-faced peak lapels', 'hand-felled barchetta pocket', 'razor-sharp bespoke drape'],
+    'Imperial Awadh Sherwani': ['couture', 'high-fashion', 'macro-detail', '24K gold dabka zardozi', 'flared angarkha ghera', 'handloom Banarasi brocade', 'royal kantha stole'],
+    'Bespoke Nehru Jacket & Kurta': ['couture', 'high-fashion', 'macro-detail', 'sculpted bandi silhouette', 'precision welt pocket', 'pintuck silk kurta', 'mother-of-pearl buttons'],
+    'Italian Double-Breasted Blazer': ['couture', 'high-fashion', 'macro-detail', '6x2 double-breasted stance', 'wide Milanese peak lapel', 'AMF pick-stitched seams', 'Neapolitan shoulder'],
+    'Designer Indo-Western Achkan': ['couture', 'high-fashion', 'macro-detail', 'asymmetrical overlap closure', 'architectural draped placket', 'tonal metallic resham', 'structured bespoke hemline'],
+    'Luxury Linen Safari Suit': ['couture', 'high-fashion', 'macro-detail', 'bellows box-pleated pockets', 'belted Norfolk waist', 'Belgian linen weave', 'epaulette shoulder tailoring']
+  }), []);
+
+  const currentDressKeywords = React.useMemo(() => {
+    return DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring', 'artisan handwork'];
+  }, [DRESS_TYPE_STYLE_KEYWORDS, dressType]);
+
+  const [selectedStyleKeywords, setSelectedStyleKeywords] = useState<string[]>(currentDressKeywords);
+  const [autoInjectKeywords, setAutoInjectKeywords] = useState<boolean>(true);
+  const [showStructuredBuilder, setShowStructuredBuilder] = useState<boolean>(true);
+
+  // Sync active style keywords whenever dressType changes
+  useEffect(() => {
+    setSelectedStyleKeywords(DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring']);
+  }, [dressType, DRESS_TYPE_STYLE_KEYWORDS]);
+
+  // Build structured prompt that injects specific style keywords based on selected dressType
+  const compiledStructuredPrompt = React.useMemo(() => {
+    const baseVision = prompt.trim() || `${color} ${fabric} ${dressType}`;
+    const activeTags = selectedStyleKeywords.length > 0
+      ? selectedStyleKeywords
+      : ['couture', 'high-fashion', 'macro-detail'];
+
+    // Ensure core style keywords are always represented when auto-inject is enabled
+    const mergedKeywords = autoInjectKeywords
+      ? Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...activeTags]))
+      : activeTags;
+
+    const specsSegment = `[Silhouette: ${dressType} | Fabric: ${fabric} | Palette: ${color} | Neckline/Collar: ${neckStyle} | Sleeve: ${sleeves} | Occasion: ${occasion}]`;
+    const keywordsSegment = mergedKeywords.length > 0
+      ? `[Style Keywords: ${mergedKeywords.join(', ')}]`
+      : '';
+
+    return `${baseVision} ${specsSegment} ${keywordsSegment}`.trim();
+  }, [prompt, dressType, fabric, color, neckStyle, sleeves, occasion, selectedStyleKeywords, autoInjectKeywords]);
+
+  const toggleStyleKeyword = (kw: string) => {
+    setSelectedStyleKeywords((prev) =>
+      prev.includes(kw) ? prev.filter((item) => item !== kw) : [...prev, kw]
+    );
+  };
+
+  const handleApplyStructuredToPrompt = () => {
+    const topKeywords = Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...selectedStyleKeywords])).slice(0, 6);
+    const enriched = `${color} ${fabric} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()} for ${occasion.toLowerCase()} — ${topKeywords.join(', ')}`;
+    setPrompt(enriched.slice(0, 300));
+  };
 
   // Update defaults when gender changes
   useEffect(() => {
@@ -96,7 +166,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         setOccasion('Bridal');
         setFabric('Silk Organza');
         setColor('Pearl blush');
-        setSleeves('Long');
+        setSleeves('Long sheer');
         setNeckStyle('Sweetheart');
         setPrompt('Pastel silk organza gown with hand-finished pearl constellation and fluid train');
       }
@@ -125,116 +195,87 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
       : ['Sweetheart', 'Sculpted V-Neck', 'Square Cut', 'Boat neck', 'Halter', 'Illusion collar']
   };
 
-  // Quick Prompt Chips
+  // Quick Prompt Chips with auto-synchronized attributes so preview updates immediately
   const promptSuggestions = gender === 'men'
     ? [
-        { label: 'Royal Bandhgala', text: 'Royal midnight raw silk Bandhgala with gold dabka collar embroidery and lion buttons' },
-        { label: 'Savile Row Tuxedo', text: 'Savile Row 3-piece tuxedo in deep Bordeaux wine velvet with Duchess satin peak lapels' },
-        { label: 'Imperial Sherwani', text: 'Ivory mulberry silk sherwani with fine hand-worked Lucknowi Chikankari resham embroidery' },
-        { label: 'Nehru Jacket Set', text: 'Golden ochre Banarasi brocade Nehru jacket over Egyptian cotton kurta and churidar' }
+        { label: 'Royal Bandhgala', dressType: 'Royal Jodhpuri Bandhgala', color: 'Kashi Midnight Obsidian', fabric: 'Pure Banarasi Raw Silk', text: 'Royal midnight raw silk Bandhgala with gold dabka collar embroidery and lion buttons' },
+        { label: 'Savile Row Tuxedo', dressType: 'Savile Row 3-Piece Tuxedo', color: 'Bordeaux Wine Velvet', fabric: 'Dense Silk Velvet', text: 'Savile Row 3-piece tuxedo in deep Bordeaux wine velvet with Duchess satin peak lapels' },
+        { label: 'Imperial Sherwani', dressType: 'Imperial Awadh Sherwani', color: 'Antique Gold & Ivory', fabric: 'Pure Banarasi Raw Silk', text: 'Ivory mulberry silk sherwani with fine hand-worked Lucknowi Chikankari resham embroidery' },
+        { label: 'Nehru Jacket Set', dressType: 'Bespoke Nehru Jacket & Kurta', color: 'Imperial Emerald', fabric: 'Pure Banarasi Raw Silk', text: 'Imperial emerald Banarasi brocade Nehru jacket over Egyptian cotton kurta and churidar' }
       ]
     : [
-        { label: 'Pearl Blush Gown', text: 'Pastel silk organza gown with hand-finished pearl constellation and fluid train' },
-        { label: 'Bridal Lehenga', text: 'Rani pink pure raw silk bridal lehenga with heavy 24K gold dabka and zardozi' },
-        { label: 'Silk Anarkali', text: 'Moonlight ivory georgette Anarkali with intricate shadow work and scalloped organza dupatta' },
-        { label: 'Saree Gown', text: 'Rosewater pre-pleated Kanjeevaram silk saree gown with Maggam work designer blouse' }
+        { label: 'Pearl Blush Gown', dressType: 'Gown', color: 'Pearl blush', fabric: 'Silk Organza', text: 'Pastel silk organza gown with hand-finished pearl constellation and fluid train' },
+        { label: 'Bridal Lehenga', dressType: 'Lehenga', color: 'Rani pink', fabric: 'Pure Banarasi Silk', text: 'Rani pink pure raw silk bridal lehenga with heavy 24K gold dabka and zardozi' },
+        { label: 'Silk Anarkali', dressType: 'Anarkali', color: 'Ivory white', fabric: 'Chanderi Tissue', text: 'Moonlight ivory georgette Anarkali with intricate shadow work and scalloped organza dupatta' },
+        { label: 'Saree Gown', dressType: 'Saree Gown', color: 'Antique gold', fabric: 'Kanjeevaram Zari Silk', text: 'Antique gold pre-pleated Kanjeevaram silk saree gown with Maggam work designer blouse' }
       ];
 
-  // The latest generated or active concept (guaranteed to match current gender)
-  const isLatestConceptMatching = latestConcept && (
-    (gender === 'men' && (latestConcept.tags?.some(t => t.toLowerCase().includes('men')) || latestConcept.id.includes('men'))) ||
-    (gender === 'women' && !latestConcept.id.includes('men') && !latestConcept.tags?.some(t => t.toLowerCase().includes('men')))
-  );
+  // Dynamically generate 4-angle cohesive renders matching current selected studio attributes
+  const liveAngles = React.useMemo(() => {
+    return generateCohesiveCoutureAngles({
+      gender,
+      dressType,
+      color,
+      fabric,
+      neckline: neckStyle,
+      sleeve: sleeves,
+      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
+      title: `${color} ${dressType}`,
+      prompt: compiledStructuredPrompt
+    });
+  }, [gender, dressType, color, fabric, neckStyle, sleeves, compiledStructuredPrompt]);
 
-  const activeConcept: DressDesign = (isLatestConceptMatching ? latestConcept : null) || (gender === 'men' ? {
-    id: 'design-men-bandhgala',
+  const activeConcept: DressDesign = React.useMemo(() => ({
+    id: gender === 'men' ? `design-men-${dressType.toLowerCase().replace(/\s+/g, '-')}` : `design-women-${dressType.toLowerCase().replace(/\s+/g, '-')}`,
     customerId: 'cust-1',
     customerName: 'Ananya Verma',
-    title: 'The Royal Rajputana Jodhpuri Bandhgala',
-    prompt: prompt,
-    createdAt: '2026-09-10T14:00:00Z',
+    title: `${color} ${dressType}`,
+    prompt: compiledStructuredPrompt,
+    createdAt: new Date().toISOString(),
     isFavorite: true,
     selectedVariationIndex: 0,
-    tags: ['Menswear', 'Bandhgala', 'Royal', 'Raw Silk', 'Bespoke', 'Groom'],
+    tags: [gender === 'men' ? 'Menswear' : 'Womenswear', dressType, color, fabric, occasion, ...selectedStyleKeywords.slice(0, 3)],
     variations: [
       {
-        id: 'var-men-bandhgala-1',
-        name: 'Royal Rajputana Obsidian Bandhgala',
-        tagline: 'Imperial raw silk bandhgala with antique dabka zardozi needlework and bespoke breeches.',
-        frontImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        backImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        sideImageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        detailImageUrl: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80',
+        id: `var-live-${gender}`,
+        name: `${color} ${dressType}`,
+        tagline: `Bespoke ${dressType.toLowerCase()} in ${fabric.toLowerCase()} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()} for ${occasion.toLowerCase()}.`,
+        frontImageUrl: liveAngles.front,
+        backImageUrl: liveAngles.back,
+        sideImageUrl: liveAngles.side,
+        detailImageUrl: liveAngles.detail,
         fabricDetails: {
-          primary: 'Pure Banarasi Raw Silk & Floating Horsehair Canvas',
-          lining: 'Cupro Breathable Anti-Static Lining',
-          embellishments: '24K gold dabka collar embroidery, bespoke brass lion-crest buttons',
-          estimatedYards: 5.5,
-          recommendedWeightGsm: 340
+          primary: `${fabric} (Master Loom)`,
+          lining: gender === 'men' ? 'Cupro Breathable Anti-Static Lining' : 'Breathable Silk Crepe & Mulmul',
+          embellishments: gender === 'men' ? '24K gold dabka collar embroidery, bespoke brass lion-crest buttons' : 'Hand-finished pearl constellation, bugle glass beads, silver zardozi',
+          estimatedYards: gender === 'men' ? 5.5 : 7.5,
+          recommendedWeightGsm: gender === 'men' ? 340 : 180
         },
-        tailorNotes: [
-          'Hand-basted full horsehair canvas chest piece for lasting sculptural drape.',
-          'Mandarin collar reinforced with Japanese collar canvas for upright regal posture.',
-          'Twin side vents with 2-inch interior seam allowance on chest and waist.',
-          'Tapered Jodhpur trousers with concealed inner ankle zips and horn buttons.'
-        ],
-        stylingTips: [
-          'Pair with an antique pocket square, uncut emerald brooch, and velvet juttis.',
-          'Ideal for royal wedding baraat, reception gala, and festive evening ceremonies.'
-        ],
-        colorPsychology: 'Midnight Obsidian communicates sovereign dignity, authority, and classical luxury.',
+        tailorNotes: gender === 'men'
+          ? [
+              'Hand-basted full horsehair canvas chest piece for lasting sculptural drape.',
+              `${neckStyle} reinforced with Japanese collar canvas for upright regal posture.`,
+              'Twin side vents with 2-inch interior seam allowance on chest and waist.',
+              `${sleeves} with functional horn buttons and hand-sewn buttonholes.`
+            ]
+          : [
+              `Hand-finished embroidery across ${neckStyle.toLowerCase()} bodice and ${sleeves.toLowerCase()}.`,
+              'Sculpted inner bodice with invisible boning structure and 2.5-inch margin.',
+              'Fluid skirt sweep with horsehair braid hem for structured movement.',
+              'Concealed back closure with silk loop micro-buttons.'
+            ],
+        stylingTips: gender === 'men'
+          ? [
+              'Pair with an antique pocket square, uncut emerald brooch, and velvet juttis.',
+              `Ideal for ${occasion.toLowerCase()} and formal evening ceremonies.`
+            ]
+          : [
+              'Pair with teardrop pearl earrings and a delicate polki choker.',
+              `Tailored specifically for ${occasion.toLowerCase()} entrances.`
+            ],
+        colorPsychology: `${color} radiates sovereign poise, serenity, and timeless couture elegance.`,
         estimatedCraftTimeDays: 14,
-        estimatedPriceRange: { min: 32000, max: 48000, currency: 'INR' },
-        specs: {
-          dressType: 'Royal Jodhpuri Bandhgala',
-          occasion: 'Groom & Royal Baraat',
-          fabric: 'Pure Raw Silk',
-          color: 'Kashi Midnight Obsidian',
-          sleeve: 'French Tailored Cuffs',
-          neckline: 'Mandarin Bandhgala',
-          pattern: 'Hand Zardozi & Dabka Gold'
-        }
-      }
-    ]
-  } : {
-    id: 'design-pearl-blush',
-    customerId: 'cust-1',
-    customerName: 'Aanya',
-    title: 'Pearl Blush Reverie',
-    prompt: prompt,
-    createdAt: '2026-09-09T18:00:00Z',
-    isFavorite: true,
-    selectedVariationIndex: 0,
-    tags: ['Evening', 'Bridal', 'Pearl blush', 'Silk', 'Gown'],
-    variations: [
-      {
-        id: 'var-pearl-blush',
-        name: 'Pastel silk organza gown',
-        tagline: 'A soft bridal silhouette with a hand-finished pearl constellation and a fluid train.',
-        frontImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        backImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        sideImageUrl: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=1000&auto=format&fit=crop&q=80',
-        detailImageUrl: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        fabricDetails: {
-          primary: `${fabric} with Mulmul Underlay`,
-          lining: 'Breathable Silk Crepe',
-          embellishments: 'Hand-finished pearl constellation, bugle glass beads, silver micro-sequins',
-          estimatedYards: 7.5,
-          recommendedWeightGsm: 180
-        },
-        tailorNotes: [
-          'Hand-finished pearl constellation across bodice and sheer sleeves.',
-          'Sweetheart neckline with invisible inner boning structure.',
-          'Fluid train with horsehair braid hem for structured sweep.',
-          'Concealed back closure with silk loop micro-buttons.'
-        ],
-        stylingTips: [
-          'Pair with teardrop pearl earrings and a delicate diamond choker.',
-          'Made for evening ceremonies and grand reception entrances.'
-        ],
-        colorPsychology: 'Pearl blush radiates timeless poise, serenity, and understated modern elegance.',
-        estimatedCraftTimeDays: 14,
-        estimatedPriceRange: { min: 4999, max: 7499, currency: 'INR' },
+        estimatedPriceRange: { min: gender === 'men' ? 28000 : 24000, max: gender === 'men' ? 46000 : 42000, currency: 'INR' },
         specs: {
           dressType: dressType as any,
           occasion: occasion as any,
@@ -242,108 +283,96 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           color: color,
           sleeve: sleeves as any,
           neckline: neckStyle as any,
-          pattern: 'Pearl & Kundan Beadwork' as any
+          pattern: (gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork') as any
         }
       }
     ]
-  });
+  }), [gender, dressType, occasion, fabric, color, sleeves, neckStyle, compiledStructuredPrompt, liveAngles, selectedStyleKeywords]);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
-    setGenerationNotice('Consulting Gemini AI Atelier engine & synthesizing haute couture concept...');
+    setGenerationStage(1);
+    setGenerationNotice(`Injecting '${dressType}' couture keywords & initializing AI model...`);
+
+    const stageTimer1 = setTimeout(() => {
+      setGenerationStage(2);
+      setGenerationNotice('Synthesizing 4-angle couture silhouette & drape proportions...');
+    }, 380);
+
+    const stageTimer2 = setTimeout(() => {
+      setGenerationStage(3);
+      setGenerationNotice('Rendering macro-detail embroidery weave & spec sheet...');
+    }, 760);
+
+    const minDelayPromise = new Promise((resolve) => setTimeout(resolve, 1100));
 
     try {
-      const res = await fetch('/api/gemini/generate-dress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gender,
-          dressType,
-          occasion,
-          fabric,
-          color,
-          sleeve: sleeves,
-          neckline: neckStyle,
-          prompt,
-          pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
-          budget: gender === 'men' ? '₹38,000' : '₹35,000'
-        })
-      });
+      const [res] = await Promise.all([
+        fetch('/api/gemini/generate-dress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gender,
+            dressType,
+            occasion,
+            fabric,
+            color,
+            sleeve: sleeves,
+            neckline: neckStyle,
+            prompt: compiledStructuredPrompt,
+            styleKeywords: selectedStyleKeywords,
+            pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
+            budget: gender === 'men' ? '₹38,000' : '₹35,000'
+          })
+        }),
+        minDelayPromise
+      ]);
+
+      clearTimeout(stageTimer1);
+      clearTimeout(stageTimer2);
 
       if (res.ok) {
         const data = await res.json();
         if (data && data.variations && data.variations.length > 0) {
           setIsGenerating(false);
+          setGenerationStage(0);
           setGenerationNotice(null);
           onDesignGenerated(data);
           return;
         }
       }
     } catch (err) {
+      clearTimeout(stageTimer1);
+      clearTimeout(stageTimer2);
       console.warn('Backend generation notice, falling back to curated concept:', err);
     }
 
     setIsGenerating(false);
+    setGenerationStage(0);
     setGenerationNotice(null);
 
-    // Dynamic cohesive assets guaranteeing matching Front, Back, Side, and Detail
-    const menCohesiveSets = {
-      bandhgala: {
-        front: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80'
-      },
-      tuxedo: {
-        front: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80'
-      },
-      sherwani: {
-        front: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=1000&auto=format&fit=crop&q=80'
-      }
-    };
-
-    const womenCohesiveSets = {
-      lehenga: {
-        front: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=80'
-      },
-      gown: {
-        front: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=1000&auto=format&fit=crop&q=80'
-      },
-      saree: {
-        front: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1000&auto=format&fit=crop&q=80',
-        back: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1000&auto=format&fit=crop&q=80',
-        side: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=1000&auto=format&fit=crop&q=80',
-        detail: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1000&auto=format&fit=crop&q=80'
-      }
-    };
-
-    const dLower = dressType.toLowerCase();
-    const assets = gender === 'men'
-      ? (dLower.includes('tuxedo') || dLower.includes('suit') ? menCohesiveSets.tuxedo : dLower.includes('sherwani') ? menCohesiveSets.sherwani : menCohesiveSets.bandhgala)
-      : (dLower.includes('gown') || dLower.includes('corset') ? womenCohesiveSets.gown : dLower.includes('saree') || dLower.includes('anarkali') ? womenCohesiveSets.saree : womenCohesiveSets.lehenga);
+    const assets = generateCohesiveCoutureAngles({
+      gender,
+      dressType,
+      color,
+      fabric,
+      neckline: neckStyle,
+      sleeve: sleeves,
+      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork',
+      title: `${color} ${dressType}`,
+      prompt: compiledStructuredPrompt
+    });
 
     const generatedDesign: DressDesign = {
       id: `design-${Date.now()}`,
       customerId: 'cust-1',
       customerName: 'Ananya Verma',
       title: `${color} ${dressType}`,
-      prompt: prompt,
+      prompt: compiledStructuredPrompt,
       createdAt: new Date().toISOString(),
       isFavorite: true,
       selectedVariationIndex: 0,
-      tags: [gender === 'men' ? 'Menswear' : 'Womenswear', dressType, color, fabric, 'AI Bespoke'],
+      tags: [gender === 'men' ? 'Menswear' : 'Womenswear', dressType, color, fabric, 'AI Bespoke', ...selectedStyleKeywords.slice(0, 3)],
       variations: [
         {
           id: `var-${Date.now()}`,
@@ -427,7 +456,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           <button
             onClick={onOpenHistory}
             className="w-9 h-9 rounded-full bg-white hover:bg-[#FAF7F2] active:scale-95 transition-all cursor-pointer text-[#2D2825] flex items-center justify-center border border-[#ECE6DE] shadow-2xs"
-            title="Design History"
+            title="Saved Wardrobe"
           >
             <RotateCcw className="w-4 h-4 text-[#2D2825]" />
           </button>
@@ -466,43 +495,146 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         </button>
       </div>
 
-      {/* 2. DRESS PREVIEW (Clean Hero preview card with tap to inspect) */}
-      <div className="space-y-1.5">
+      {/* 2. LIVE 4-ANGLE COUTURE PREVIEW WITH SKELETON LOADER ANIMATION */}
+      <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="font-medium text-[#7D726A]">Concept Preview</span>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-[#8D2434] animate-ping' : 'bg-emerald-600 animate-pulse'}`} />
+            <span className="font-semibold text-[#2D2825]">
+              {isGenerating ? 'AI Model Synthesizing Design...' : 'Live Atelier Preview'}
+            </span>
+          </div>
           <span className="text-[#8D2434] font-semibold truncate max-w-[200px]">{activeConcept.title}</span>
         </div>
 
-        <div 
-          onClick={() => onViewDesignDetails && onViewDesignDetails(activeConcept)}
-          className="relative aspect-[16/10] rounded-[20px] overflow-hidden bg-[#F5EFEA] border border-[#ECE6DE] shadow-xs cursor-pointer group"
-        >
+        <div className="relative aspect-[4/4.6] rounded-[22px] overflow-hidden bg-[#F5EFEA] border border-[#ECE6DE] shadow-sm group">
           <img
-            src={activeConcept.variations[0].frontImageUrl}
+            src={
+              previewAngle === 'back' ? activeConcept.variations[0].backImageUrl :
+              previewAngle === 'side' ? activeConcept.variations[0].sideImageUrl :
+              previewAngle === 'detail' ? (activeConcept.variations[0].detailImageUrl || activeConcept.variations[0].frontImageUrl) :
+              activeConcept.variations[0].frontImageUrl
+            }
             alt={activeConcept.title}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover object-top group-hover:scale-102 transition-transform duration-700"
+            onClick={() => !isGenerating && onViewDesignDetails && onViewDesignDetails(activeConcept)}
+            className={`w-full h-full object-cover object-top cursor-pointer transition-all duration-500 ${
+              isGenerating ? 'scale-105 blur-xs opacity-35' : 'scale-100 opacity-100'
+            }`}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-          
-          <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-white">
-            <span className="text-xs font-serif font-medium drop-shadow-sm truncate pr-2">
-              {activeConcept.variations[0].name}
-            </span>
-            <div className="px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-xs text-[10px] font-semibold text-[#2D2825] flex items-center gap-1 shadow-xs shrink-0">
-              <Eye className="w-3 h-3 text-[#8D2434]" />
-              <span>Inspect</span>
+
+          {/* SKELETON LOADER ANIMATION WHILE AI MODEL PROCESSES NEW DESIGN */}
+          {isGenerating && (
+            <div
+              data-testid="ai-generator-skeleton"
+              className="absolute inset-0 z-20 bg-[#FAF7F2]/90 backdrop-blur-xs p-4 flex flex-col justify-between animate-in fade-in duration-200"
+            >
+              {/* Top Skeleton Header Bar */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-6 w-14 rounded-full bg-[#E6DDD3] animate-pulse" />
+                  <div className="h-6 w-14 rounded-full bg-[#ECE6DE] animate-pulse" />
+                  <div className="h-6 w-14 rounded-full bg-[#ECE6DE] animate-pulse" />
+                </div>
+                <div className="h-6 w-28 rounded-full bg-[#8D2434]/20 border border-[#8D2434]/30 animate-pulse" />
+              </div>
+
+              {/* Center Couture Mannequin & Garment Wireframe Skeleton */}
+              <div className="my-auto flex flex-col items-center justify-center space-y-3.5 py-2">
+                <div className="relative w-36 h-48 rounded-2xl bg-gradient-to-b from-[#ECE6DE] via-[#F5EFEA] to-[#E5DCD0] border border-[#D8CEC2] p-3 flex flex-col items-center justify-between shadow-inner overflow-hidden">
+                  {/* Animated couture mannequin proportions */}
+                  <div className="w-8 h-8 rounded-full bg-[#D8CEC2] animate-pulse" />
+                  <div className="w-20 h-10 rounded-t-xl bg-[#D8CEC2]/90 animate-pulse" />
+                  <div className="w-14 h-6 rounded-md bg-[#CFC3B4] animate-pulse" />
+                  <div className="w-28 h-20 rounded-b-2xl bg-gradient-to-b from-[#D8CEC2] to-[#C7B9A8] animate-pulse" />
+                  {/* Scanning beam indicator */}
+                  <div className="absolute inset-x-0 top-1/2 h-1 bg-gradient-to-r from-transparent via-[#8D2434]/60 to-transparent animate-bounce" />
+                </div>
+
+                {/* Live AI Stage Progress Pills */}
+                <div className="w-full max-w-[260px] bg-white/90 rounded-2xl border border-[#ECE6DE] p-3 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-[#8D2434] uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 animate-spin" />
+                      <span>AI Couture Synthesis</span>
+                    </span>
+                    <span>Stage {generationStage || 1}/3</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-[#ECE6DE] overflow-hidden">
+                    <div
+                      className={`h-full bg-[#8D2434] rounded-full transition-all duration-300 ${
+                        generationStage === 1 ? 'w-1/3' : generationStage === 2 ? 'w-2/3' : 'w-full'
+                      }`}
+                    />
+                  </div>
+                  <p className="text-[11px] font-medium text-[#2D2825] truncate">
+                    {generationNotice || 'Synthesizing bespoke silhouette...'}
+                  </p>
+                  {/* Skeleton spec lines */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="h-2.5 w-full rounded-full bg-[#ECE6DE] animate-pulse" />
+                    <div className="h-2.5 w-4/5 rounded-full bg-[#ECE6DE] animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom 4-Angle Thumbnail Skeletons */}
+              <div className="grid grid-cols-4 gap-2">
+                {['Front', 'Back', 'Side', 'Macro'].map((label) => (
+                  <div
+                    key={label}
+                    className="h-10 rounded-xl bg-[#E6DDD3]/90 border border-[#D8CEC2] p-1.5 flex flex-col justify-between animate-pulse"
+                  >
+                    <div className="h-2 w-8 rounded bg-[#CFC3B4]" />
+                    <span className="text-[9px] font-bold text-[#7D726A]">{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* Top Angle Switcher Bar */}
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+            <div className="flex items-center gap-1 bg-black/55 backdrop-blur-md p-1 rounded-full border border-white/15">
+              {(['front', 'back', 'side', 'detail'] as const).map((ang) => (
+                <button
+                  key={ang}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewAngle(ang);
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer ${
+                    previewAngle === ang
+                      ? 'bg-white text-[#2D2825] shadow-2xs'
+                      : 'text-white/85 hover:text-white'
+                  }`}
+                >
+                  {ang === 'detail' ? 'Macro' : ang.charAt(0).toUpperCase() + ang.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onViewDesignDetails && onViewDesignDetails(activeConcept)}
+              className="px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-[10px] font-bold text-[#2D2825] flex items-center gap-1 shadow-sm cursor-pointer"
+            >
+              <Eye className="w-3 h-3 text-[#8D2434]" />
+              <span>Full Spec & Yardage</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* 3. PROMPT INPUT */}
-      <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-4 shadow-2xs space-y-2">
+      {/* 3. PROMPT INPUT & STRUCTURED PROMPT BUILDER */}
+      <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-4 shadow-2xs space-y-3">
         <div className="flex items-center justify-between">
           <label className="block text-xs font-semibold text-[#2D2825]">
             {gender === 'men' ? 'Describe your bespoke menswear vision' : 'Describe your couture dress vision'}
           </label>
+          <span className="px-2 py-0.5 rounded-full bg-[#FBECEF] text-[#8D2434] text-[10px] font-bold">
+            {dressType}
+          </span>
         </div>
         <textarea
           rows={3}
@@ -513,7 +645,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           className="w-full text-xs text-[#2D2825] placeholder-[#7D726A] bg-transparent resize-none focus:outline-none leading-relaxed"
         />
         <div className="flex items-center justify-between text-[10px] text-[#7D726A] pt-1 border-t border-[#FAF7F2]">
-          <span className="italic">Powered by Gemini AI Atelier Engine</span>
+          <span className="italic">Live Silhouette & Color Sync Active</span>
           <span>{prompt.length}/300</span>
         </div>
 
@@ -523,12 +655,96 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
             <button
               key={item.label}
               type="button"
-              onClick={() => setPrompt(item.text)}
+              onClick={() => {
+                setPrompt(item.text);
+                setDressType(item.dressType);
+                setColor(item.color);
+                setFabric(item.fabric);
+              }}
               className="px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] text-[10px] font-medium text-[#7D726A] hover:text-[#2D2825] hover:border-[#8D2434] transition-all whitespace-nowrap cursor-pointer shrink-0"
             >
               {item.label}
             </button>
           ))}
+        </div>
+
+        {/* STRUCTURED PROMPT BUILDER (Injects 'couture', 'high-fashion', 'macro-detail' & dress-type keywords) */}
+        <div className="rounded-2xl bg-[#FAF7F2] border border-[#ECE6DE] p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Wand2 className="w-3.5 h-3.5 text-[#8D2434]" />
+              <span className="text-[11px] font-bold text-[#2D2825]">
+                Structured Prompt Builder
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-[#8D2434]/10 text-[#8D2434] text-[9px] font-bold uppercase">
+                Auto-Injected
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowStructuredBuilder(!showStructuredBuilder)}
+              className="text-[10px] font-semibold text-[#8D2434] cursor-pointer hover:underline"
+            >
+              {showStructuredBuilder ? 'Compact' : 'Expand'}
+            </button>
+          </div>
+
+          <p className="text-[10px] text-[#7D726A] leading-relaxed">
+            Automatically injects <span className="font-semibold text-[#2D2825]">couture</span>, <span className="font-semibold text-[#2D2825]">high-fashion</span>, <span className="font-semibold text-[#2D2825]">macro-detail</span>, and <span className="font-semibold text-[#8D2434]">{dressType}</span> craft keywords to maximize AI design relevance.
+          </p>
+
+          {/* Keyword Chips for Selected Dress Type */}
+          <div className="flex flex-wrap gap-1.5">
+            {currentDressKeywords.map((kw) => {
+              const isSelected = selectedStyleKeywords.includes(kw);
+              return (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => toggleStyleKeyword(kw)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                    isSelected
+                      ? 'bg-[#2D2825] text-white shadow-2xs'
+                      : 'bg-white text-[#7D726A] border border-[#ECE6DE] hover:border-[#8D2434]'
+                  }`}
+                >
+                  <span>#{kw}</span>
+                  {isSelected && <span className="text-[#E8C5CC] text-[9px]">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {showStructuredBuilder && (
+            <div className="space-y-2 pt-1">
+              <div className="p-2.5 rounded-xl bg-white border border-[#ECE6DE] text-[10px] text-[#5C534B] font-mono leading-relaxed break-words">
+                <span className="text-[9px] uppercase font-sans font-bold text-[#8D2434] block mb-0.5">
+                  Compiled AI Model Payload:
+                </span>
+                {compiledStructuredPrompt}
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-[10px] font-medium text-[#2D2825] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoInjectKeywords}
+                    onChange={(e) => setAutoInjectKeywords(e.target.checked)}
+                    className="rounded border-[#ECE6DE] text-[#8D2434] focus:ring-[#8D2434]"
+                  />
+                  <span>Always inject core couture keywords</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleApplyStructuredToPrompt}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#FBECEF] text-[#8D2434] border border-[#8D2434]/30 text-[10px] font-bold transition-colors cursor-pointer shrink-0"
+                >
+                  Write into Prompt Box
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -779,6 +995,22 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
                 ))}
               </select>
             </div>
+          </div>
+        )}
+
+        {onOpenFabricLibrary && (
+          <div className="pt-2 border-t border-[#ECE6DE] flex items-center justify-between">
+            <span className="text-[11px] text-[#7D726A]">
+              Want to inspect high-res weaves & request a feeler swatch?
+            </span>
+            <button
+              type="button"
+              onClick={onOpenFabricLibrary}
+              className="px-3 py-1.5 rounded-full bg-white hover:bg-[#2D2825] text-[#8D2434] hover:text-white border border-[#ECE6DE] text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Open Fabric Library</span>
+            </button>
           </div>
         )}
       </div>

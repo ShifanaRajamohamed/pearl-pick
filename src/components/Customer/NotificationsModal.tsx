@@ -1,15 +1,18 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
+  BellRing,
   X, 
   Sparkles, 
   Receipt, 
   CheckCircle2, 
   Package, 
   ArrowRight,
-  Check
+  Check,
+  Smartphone
 } from 'lucide-react';
 import { NotificationItem } from '../../types';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 interface NotificationsModalProps {
   isOpen: boolean;
@@ -17,7 +20,9 @@ interface NotificationsModalProps {
   notifications: NotificationItem[];
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
-  onNavigateToTab: (tab: string, id?: string) => void;
+  onClearAll?: () => void;
+  onNotificationClick?: (notif: any) => void;
+  onNavigateToTab?: (tab: string, id?: string) => void;
 }
 
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({
@@ -26,19 +31,62 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   notifications,
   onMarkAsRead,
   onMarkAllAsRead,
+  onClearAll,
+  onNotificationClick,
   onNavigateToTab
 }) => {
+  const [pushEnabled, setPushEnabled] = useState<boolean>(pushNotificationService.isEnabled());
+  const [permissionState, setPermissionState] = useState<string>(pushNotificationService.getPermissionStatus());
+
+  useEffect(() => {
+    if (isOpen) {
+      setPushEnabled(pushNotificationService.isEnabled());
+      setPermissionState(pushNotificationService.getPermissionStatus());
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const getIcon = (type: NotificationItem['type']) => {
+  const handleTogglePush = async () => {
+    if (!pushEnabled) {
+      const perm = await pushNotificationService.requestPermission();
+      setPermissionState(perm);
+      pushNotificationService.setEnabled(true);
+      setPushEnabled(true);
+    } else {
+      pushNotificationService.setEnabled(false);
+      setPushEnabled(false);
+    }
+  };
+
+  const handleTriggerDemoPush = async () => {
+    pushNotificationService.setEnabled(true);
+    setPushEnabled(true);
+    await pushNotificationService.sendMilestonePushNotification({
+      orderId: 'ord-8801',
+      orderNumber: 'PP-IN-2026-8801',
+      garmentTitle: 'Rani Zardozi Bridal Lehenga',
+      tailorName: 'Ustad Rafiq Ahmed & Sons',
+      tailorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+      milestoneId: 'm-5',
+      milestoneTitle: 'First Fitting Complete',
+      status: 'COMPLETED',
+      note: 'Choli baste fitting & 16-kali skirt flare verified on mannequin.',
+      photoUrl: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=800&auto=format&fit=crop&q=80'
+    });
+  };
+
+  const getIcon = (type: NotificationItem['type'] | string) => {
     switch (type) {
       case 'design_ready':
         return <Sparkles className="w-4 h-4 text-[#B47B84]" />;
       case 'quote_received':
         return <Receipt className="w-4 h-4 text-[#4A3728]" />;
       case 'tailor_accepted':
+      case 'ORDER_UPDATE':
         return <CheckCircle2 className="w-4 h-4 text-[#6E8765]" />;
       case 'order_delivered':
+      case 'ORDER':
         return <Package className="w-4 h-4 text-[#6E8765]" />;
       default:
         return <Bell className="w-4 h-4 text-[#726761]" />;
@@ -48,9 +96,14 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-14 sm:pt-20 px-4 bg-[#2D2825]/60 backdrop-blur-md animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-14 sm:pt-20 px-4 bg-[#2D2825]/60 backdrop-blur-md animate-fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div 
-        className="w-full max-w-md bg-[#F9F6F2] rounded-[32px] border border-[#E4D9D1] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        className="w-full max-w-md bg-[#F9F6F2] rounded-[32px] border border-[#E4D9D1] shadow-2xl overflow-hidden flex flex-col max-h-[82vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -60,7 +113,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
               <Bell className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-serif text-base font-bold text-[#2D2825]">Notifications</h2>
+              <h2 className="font-serif text-base font-bold text-[#2D2825]">Notifications & Push Alerts</h2>
               <p className="text-[11px] text-[#726761]">
                 {unreadCount > 0 ? `${unreadCount} unread atelier updates` : 'All caught up'}
               </p>
@@ -75,13 +128,65 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 Mark all read
               </button>
             )}
+            {onClearAll && notifications.length > 0 && (
+              <button
+                onClick={onClearAll}
+                className="text-[11px] font-medium text-[#726761] hover:text-[#2D2825] cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-full bg-[#F3ECE6] text-[#2D2825] hover:bg-[#E9D4D7] transition-colors"
+              className="p-1.5 rounded-full bg-[#F3ECE6] text-[#2D2825] hover:bg-[#E9D4D7] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Device Push Notification Service Control Bar */}
+        <div className="px-4 py-3 bg-[#FFFDF9] border-b border-[#E4D9D1] space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-[#FBECEF] text-[#8D2434] flex items-center justify-center shrink-0">
+                <Smartphone className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-[#2D2825]">Device Milestone Push Service</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                    pushEnabled ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-stone-100 text-stone-600'
+                  }`}>
+                    {pushEnabled ? 'Active' : 'Muted'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-[#726761]">
+                  Instant push alert when tailor advances a milestone ({permissionState === 'granted' ? 'Native + Banner' : 'Live Device Banner'})
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleTogglePush}
+              className={`px-3 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer border ${
+                pushEnabled
+                  ? 'bg-[#2D2825] text-white border-[#2D2825]'
+                  : 'bg-white text-[#2D2825] border-[#E4D9D1]'
+              }`}
+            >
+              {pushEnabled ? 'Enabled ✓' : 'Enable Push'}
+            </button>
+          </div>
+
+          <button
+            id="send-test-milestone-push-btn"
+            onClick={handleTriggerDemoPush}
+            className="w-full py-2 px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#FBECEF] border border-[#E4D9D1] hover:border-[#8D2434] text-[11px] font-semibold text-[#8D2434] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <BellRing className="w-3.5 h-3.5" />
+            <span>Test Push Alert: "First Fitting Complete"</span>
+          </button>
         </div>
 
         {/* List */}
@@ -90,10 +195,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             <div className="text-center py-12 space-y-2">
               <Bell className="w-8 h-8 text-[#E4D9D1] mx-auto" />
               <p className="font-serif text-sm font-bold text-[#2D2825]">No notifications yet</p>
-              <p className="text-xs text-[#726761]">You'll get updates when your dress designs, quotes, or orders update.</p>
+              <p className="text-xs text-[#726761]">You'll get updates when your dress designs, quotes, or order milestones advance.</p>
             </div>
           ) : (
-            notifications.map((notif) => (
+            notifications.map((notif: any) => (
               <div 
                 key={notif.id}
                 className={`py-3.5 px-3 rounded-2xl transition-all cursor-pointer ${
@@ -101,7 +206,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 }`}
                 onClick={() => {
                   onMarkAsRead(notif.id);
-                  if (notif.actionTab) {
+                  if (onNotificationClick) {
+                    onNotificationClick(notif);
+                  } else if (onNavigateToTab && notif.actionTab) {
                     onNavigateToTab(notif.actionTab, notif.actionId);
                     onClose();
                   }
@@ -121,17 +228,17 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-[#726761] mt-0.5 leading-relaxed font-light">
-                      {notif.message}
+                      {notif.message || notif.description}
                     </p>
-                    {notif.actionTab && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#B47B84] mt-2 uppercase tracking-wider">
-                        <span>View Details</span>
+                    {(notif.actionTab || notif.actionUrl) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#8D2434] mt-2 uppercase tracking-wider">
+                        <span>Track Order Milestone</span>
                         <ArrowRight className="w-3 h-3" />
                       </span>
                     )}
                   </div>
                   {!notif.isRead && (
-                    <span className="w-2 h-2 rounded-full bg-[#B47B84] shrink-0 mt-1.5" />
+                    <span className="w-2 h-2 rounded-full bg-[#8D2434] shrink-0 mt-1.5" />
                   )}
                 </div>
               </div>

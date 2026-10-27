@@ -480,6 +480,16 @@ export const INITIAL_TAILORS: TailorProfile[] = [
         price: 36000,
         description: 'Pure zari korvai border Kanjeevaram silk tailored into a dramatic structured gala gown.',
         customerRating: 5.0
+      },
+      {
+        id: 'port-3b',
+        title: 'Temple Gold Korvai Bridal Drape',
+        category: 'Bridal Couture',
+        imageUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 14,
+        price: 41000,
+        description: 'Handwoven 3-ply Kanchipuram mulberry silk with Maggam-work temple blouse.',
+        customerRating: 4.98
       }
     ]
   },
@@ -519,7 +529,17 @@ export const INITIAL_TAILORS: TailorProfile[] = [
         completionTimeDays: 10,
         price: 42000,
         description: 'Structured 12-bone boned corset with flowing pleated organza cape and antique mirror work.',
-        customerRating: 4.9
+        customerRating: 4.95
+      },
+      {
+        id: 'port-4b',
+        title: 'Champagne Pearl Decolletage Gown',
+        category: 'Red Carpet & Reception',
+        imageUrl: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 12,
+        price: 38500,
+        description: 'Italian Duchess satin bias-cut silhouette encrusted with freshwater seed pearls.',
+        customerRating: 4.92
       }
     ]
   },
@@ -550,7 +570,28 @@ export const INITIAL_TAILORS: TailorProfile[] = [
     equipment: ['Gota Beating Anvils', 'Specialized Metallic Thread Rig'],
     certifications: ['Rajasthan Heritage Craft Society Master'],
     reviews: [],
-    portfolio: []
+    portfolio: [
+      {
+        id: 'port-jaipur-1',
+        title: 'Emerald Gota Patti 3-Tier Sharara',
+        category: 'Mehendi & Festive',
+        imageUrl: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 12,
+        price: 29500,
+        description: 'Pure Chanderi silk brocade with hand-hammered silver gota patti and mirror work.',
+        customerRating: 4.97
+      },
+      {
+        id: 'port-jaipur-2',
+        title: 'Saffron Marigold Peplum & Flared Lehenga',
+        category: 'Haldi & Sangeet',
+        imageUrl: 'https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 14,
+        price: 24000,
+        description: 'Hand-dyed Jaipur raw silk with danka metallic embroidery and tassel latkans.',
+        customerRating: 4.94
+      }
+    ]
   },
   {
     id: 'tailor-singhania',
@@ -639,6 +680,16 @@ export const INITIAL_TAILORS: TailorProfile[] = [
         price: 52000,
         description: 'Mulberry raw silk sherwani featuring 200,000 hand-sewn resham stitches, freshwater seed pearls, and chanderi stole.',
         customerRating: 5.0
+      },
+      {
+        id: 'port-salim-2',
+        title: 'Golden Ochre Banarasi Brocade Bundi Set',
+        category: "Men's Festive Couture",
+        imageUrl: 'https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=800&auto=format&fit=crop&q=80',
+        completionTimeDays: 10,
+        price: 22500,
+        description: 'Handwoven zari brocade Nehru jacket paired with Lucknowi shadow-work kurta.',
+        customerRating: 4.96
       }
     ]
   }
@@ -1011,15 +1062,119 @@ export const INITIAL_ORDERS: Order[] = [
     measurements: INITIAL_MEASUREMENTS,
     currentStage: 'FIRST_FITTING',
     milestones: [
-      { id: 'm-1', stage: 'QUOTATION_ACCEPTED', title: 'Quotation Accepted & Escrow Locked', label: 'Quotation Accepted', description: '₹38,000 held safely in Pearl Pick! NPCI UPI Escrow Vault', status: 'COMPLETED', completed: true, completedAt: '2026-08-16T18:00:00Z' },
-      { id: 'm-2', stage: 'MEASUREMENTS_CONFIRMED', title: '14-Point Measurements Verified', label: 'Measurements Verified', description: 'Master Rafiq validated blouse bust 35", waist 28", and 2.5" alteration allowance', status: 'COMPLETED', completed: true, completedAt: '2026-08-16T19:20:00Z' },
-      { id: 'm-3', stage: 'FABRIC_SOURCING', title: 'Pure Raw Silk Cut & Inspected', label: 'Raw Silk Sourced', description: 'Rani Gulabi pure raw silk fabric inspected for weave consistency and luster', status: 'COMPLETED', completed: true, completedAt: '2026-08-17T09:00:00Z', photoUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80', photoProof: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80' },
-      { id: 'm-4', stage: 'PATTERN_MAKING', title: '16-Kali Pattern Drafting', label: 'Pattern Drafting', description: 'Individual paper pattern calibrated to Ananya’s height and waist measurement', status: 'COMPLETED', completed: true, completedAt: '2026-08-17T14:30:00Z' },
-      { id: 'm-5', stage: 'FIRST_FITTING', title: 'Baste Fitting / Toile Ready', label: 'First Fitting Ready', description: 'Choli structure assembled with baste stitches; video confirmation photo shared in chat', status: 'IN_PROGRESS', completed: false },
-      { id: 'm-6', stage: 'FINAL_STITCHING', title: 'Hand Zardozi Gold Work & Double Can-Can', label: 'Zardozi & Stitching', description: '4 Karigars hand-embroidering dabka floral motifs across 16 panels', status: 'PENDING', completed: false },
-      { id: 'm-7', stage: 'QUALITY_INSPECTION', title: 'Master Darzi Quality Check', label: 'Quality Check', description: 'Checking stitch tolerance, zipper, hook alignment, and can-can fullness', status: 'PENDING', completed: false },
-      { id: 'm-8', stage: 'SHIPPED', title: 'BlueDart Express Insured Dispatch', label: 'Courier Shipped', description: 'Packed in signature velvet keepsake box with garment bag', status: 'PENDING', completed: false },
-      { id: 'm-9', stage: 'DELIVERED', title: 'Delivery & Fit Verification', label: 'Delivered', description: 'Customer confirms perfect fit; Escrow balance released to Ustad Rafiq', status: 'PENDING', completed: false }
+      { 
+        id: 'm-1', 
+        stage: 'QUOTATION_ACCEPTED', 
+        title: 'Quotation Accepted & Escrow Locked', 
+        label: 'Quotation Accepted', 
+        description: '₹38,000 held safely in Pearl Pick! NPCI UPI Escrow Vault', 
+        status: 'COMPLETED', 
+        completed: true, 
+        completedAt: '2026-08-16T18:00:00Z',
+        progressPhotos: [
+          {
+            id: 'pp-101',
+            url: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=1000&auto=format&fit=crop&q=85',
+            caption: 'Atelier production docket initialized & silk bolts reserved in vault for Order #ord-8801.',
+            uploadedAt: '2026-08-16T18:10:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'Quotation Accepted'
+          }
+        ]
+      },
+      { 
+        id: 'm-2', 
+        stage: 'MEASUREMENTS_CONFIRMED', 
+        title: '14-Point Measurements Verified', 
+        label: 'Measurements Verified', 
+        description: 'Master Rafiq validated blouse bust 35", waist 28", and 2.5" alteration allowance', 
+        status: 'COMPLETED', 
+        completed: true, 
+        completedAt: '2026-08-16T19:20:00Z',
+        progressPhotos: [
+          {
+            id: 'pp-102',
+            url: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=1000&auto=format&fit=crop&q=85',
+            caption: 'Dress form mannequin calibrated to exact 35" bust, 28" waist & 9.5" back neck depth.',
+            uploadedAt: '2026-08-16T19:20:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'Measurements Verified'
+          }
+        ]
+      },
+      { 
+        id: 'm-3', 
+        stage: 'FABRIC_SOURCING', 
+        title: 'Pure Raw Silk Cut & Inspected', 
+        label: 'Raw Silk Sourced', 
+        description: 'Rani Gulabi pure raw silk fabric inspected for weave consistency and luster', 
+        status: 'COMPLETED', 
+        completed: true, 
+        completedAt: '2026-08-17T09:00:00Z', 
+        photoUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=85', 
+        photoProof: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=85',
+        progressPhotos: [
+          {
+            id: 'pp-103',
+            url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=85',
+            caption: '360 GSM Bangalore Pure Raw Silk (Rani Pink) inspected under daylight for zero slub defects.',
+            uploadedAt: '2026-08-17T09:00:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'Raw Silk Sourced'
+          },
+          {
+            id: 'pp-104',
+            url: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1000&auto=format&fit=crop&q=85',
+            caption: '24K gold-plated dabka bullion & real silver kasab spools matched to the silk warp.',
+            uploadedAt: '2026-08-17T10:15:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'Raw Silk Sourced'
+          }
+        ]
+      },
+      { 
+        id: 'm-4', 
+        stage: 'PATTERN_MAKING', 
+        title: '16-Kali Pattern Drafting', 
+        label: 'Pattern Drafting', 
+        description: 'Individual paper pattern calibrated to Ananya’s height and waist measurement', 
+        status: 'COMPLETED', 
+        completed: true, 
+        completedAt: '2026-08-17T14:30:00Z',
+        progressPhotos: [
+          {
+            id: 'pp-105',
+            url: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=1000&auto=format&fit=crop&q=85',
+            caption: '16-panel architectural kali paper draft chalked with 2.5-inch inner seam allowance.',
+            uploadedAt: '2026-08-17T14:30:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'Pattern Drafting'
+          }
+        ]
+      },
+      { 
+        id: 'm-5', 
+        stage: 'FIRST_FITTING', 
+        title: 'Baste Fitting / Toile Ready', 
+        label: 'First Fitting Ready', 
+        description: 'Choli structure assembled with baste stitches; video confirmation photo shared in chat', 
+        status: 'IN_PROGRESS', 
+        completed: false,
+        progressPhotos: [
+          {
+            id: 'pp-106',
+            url: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=1000&auto=format&fit=crop&q=85',
+            caption: 'First baste fitting of padded sweetheart choli & double can-can skirt flare on atelier form.',
+            uploadedAt: '2026-08-17T16:45:00Z',
+            uploadedBy: 'Ustad Rafiq Ahmed',
+            stageLabel: 'First Fitting Ready'
+          }
+        ]
+      },
+      { id: 'm-6', stage: 'FINAL_STITCHING', title: 'Hand Zardozi Gold Work & Double Can-Can', label: 'Zardozi & Stitching', description: '4 Karigars hand-embroidering dabka floral motifs across 16 panels', status: 'PENDING', completed: false, progressPhotos: [] },
+      { id: 'm-7', stage: 'QUALITY_INSPECTION', title: 'Master Darzi Quality Check', label: 'Quality Check', description: 'Checking stitch tolerance, zipper, hook alignment, and can-can fullness', status: 'PENDING', completed: false, progressPhotos: [] },
+      { id: 'm-8', stage: 'SHIPPED', title: 'BlueDart Express Insured Dispatch', label: 'Courier Shipped', description: 'Packed in signature velvet keepsake box with garment bag', status: 'PENDING', completed: false, progressPhotos: [] },
+      { id: 'm-9', stage: 'DELIVERED', title: 'Delivery & Fit Verification', label: 'Delivered', description: 'Customer confirms perfect fit; Escrow balance released to Ustad Rafiq', status: 'PENDING', completed: false, progressPhotos: [] }
     ],
     totalAmount: 38000,
     paidAmount: 38000,
@@ -1376,6 +1531,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S', 'M', 'L', 'XL'],
     fabric: 'Marigold silk',
+    fabricType: 'Mulberry Silk',
+    weightGsm: 210,
+    origin: 'Jaipur, Rajasthan',
+    giCertified: true,
     description: 'Sculpted peplum top with flute pleating and matching high-waist flared skirt in luminous marigold silk.',
     rating: 4.95,
     reviewCount: 42,
@@ -1386,7 +1545,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Marigold Saffron',
       length: 'Floor Length Skirt + Peplum Top',
       washCare: 'Dry Clean Specialist',
-      work: 'Silk thread contouring'
+      work: 'Silk thread contouring',
+      weightGsm: 210,
+      origin: 'Jaipur, Rajasthan'
     }
   },
   {
@@ -1404,6 +1565,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['XS', 'S', 'M', 'L'],
     fabric: 'Ivory crepe',
+    fabricType: 'Crepe & Organza',
+    weightGsm: 140,
+    origin: 'Mumbai, Maharashtra',
+    giCertified: false,
     description: 'Minimalist luxury crop bodice paired with structured wide-leg palazzo or slit skirt in fine ivory crepe.',
     rating: 4.92,
     reviewCount: 38,
@@ -1414,7 +1579,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Warm Ivory',
       length: 'Cropped Bustier + Midi Skirt',
       washCare: 'Gentle Machine / Dry Clean',
-      work: 'Subtle seed pearl piping'
+      work: 'Subtle seed pearl piping',
+      weightGsm: 140,
+      origin: 'Mumbai, Maharashtra'
     }
   },
   {
@@ -1432,6 +1599,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S', 'M', 'L', 'XL'],
     fabric: 'Net & pearls',
+    fabricType: 'Crepe & Organza',
+    weightGsm: 95,
+    origin: 'Lucknow, Uttar Pradesh',
+    giCertified: true,
     description: 'Romantic floor-length Anarkali draped in soft pastel net with hand-finished freshwater pearl clusters.',
     rating: 4.96,
     reviewCount: 51,
@@ -1442,7 +1613,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Rose Water Blush',
       length: 'Floor Length (52")',
       washCare: 'Delicate Dry Clean',
-      work: 'Pearl constellation embroidery'
+      work: 'Pearl constellation embroidery',
+      weightGsm: 95,
+      origin: 'Lucknow, Uttar Pradesh'
     }
   },
   {
@@ -1460,6 +1633,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S', 'M', 'L', 'XL'],
     fabric: 'Silk blend',
+    fabricType: 'Pure Raw Silk',
+    weightGsm: 290,
+    origin: 'Varanasi, Uttar Pradesh',
+    giCertified: true,
     description: 'Regal structured evening jacket in midnight navy silk blend with dense gold and zardozi threadwork.',
     rating: 4.91,
     reviewCount: 34,
@@ -1470,7 +1647,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Midnight Navy & Gold',
       length: 'Hip Length Fitted Jacket',
       washCare: 'Professional Steam Clean',
-      work: 'Heavy zardozi and metallic zari'
+      work: 'Heavy zardozi and metallic zari',
+      weightGsm: 290,
+      origin: 'Varanasi, Uttar Pradesh'
     }
   },
   {
@@ -1488,6 +1667,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['XS', 'S', 'M', 'L', 'XL', 'Custom Stitch to Measure'],
     fabric: 'Pure Banarasi Katan Silk with 24K Gold Zari Weave',
+    fabricType: 'Banarasi Katan Silk',
+    weightGsm: 360,
+    origin: 'Varanasi, Uttar Pradesh',
+    giCertified: true,
     description: 'An architectural 16-panel bridal masterpiece woven on traditional handlooms in Varanasi. Embellished with hand-worked dabka zardozi motifs along the 4-inch scalloped border and accompanied by a pure silk organza dupatta.',
     rating: 4.96,
     reviewCount: 38,
@@ -1498,7 +1681,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Royal Crimson & Antique Gold',
       length: 'Floor Length (43")',
       washCare: 'Dry Clean Specialist Only',
-      work: 'Hand Zardozi & Resham Embroidery'
+      work: 'Hand Zardozi & Resham Embroidery',
+      weightGsm: 360,
+      origin: 'Varanasi, Uttar Pradesh'
     },
     reviews: [
       {
@@ -1532,6 +1717,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S', 'M', 'L', 'Custom Stitch to Measure'],
     fabric: 'Pure Mulberry Silk Georgette',
+    fabricType: 'Mulberry Silk',
+    weightGsm: 165,
+    origin: 'Lucknow, Uttar Pradesh',
+    giCertified: true,
     description: 'A diaphanous 28-kali Anarkali suit finished with micro-pearl edging on the decolletage and sleeves. Pre-stitched and ready to ship within 24 hours or customizable to your 14-point fit sheet.',
     rating: 4.88,
     reviewCount: 29,
@@ -1542,7 +1731,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Opaline Dusty Rose',
       length: 'Floor Length (54")',
       washCare: 'Delicate Dry Clean',
-      work: 'Fine Chikankari Shadow Work'
+      work: 'Fine Chikankari Shadow Work',
+      weightGsm: 165,
+      origin: 'Lucknow, Uttar Pradesh'
     }
   },
   {
@@ -1560,6 +1751,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['XS', 'S', 'M', 'L', 'Custom Stitch to Measure'],
     fabric: 'Dense Silk Micro-Velvet (420 GSM)',
+    fabricType: 'Silk Velvet',
+    weightGsm: 420,
+    origin: 'Mumbai, Maharashtra',
+    giCertified: false,
     description: 'Internal Parisian boned corsetry with sweetheart decolletage and a sculpted fluid mermaid flare. Features concealed side zipper and padded bust support.',
     rating: 4.92,
     reviewCount: 44,
@@ -1570,7 +1765,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Midnight Sapphire',
       length: 'Floor Sweeping with 18" Court Train',
       washCare: 'Professional Steam Clean',
-      work: 'Tonal Bugle Beadwork'
+      work: 'Tonal Bugle Beadwork',
+      weightGsm: 420,
+      origin: 'Mumbai, Maharashtra'
     }
   },
   {
@@ -1588,6 +1785,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S', 'M', 'L', 'Custom Stitch to Measure'],
     fabric: 'Authentic 3-Ply Kanchipuram Silk with Certified Pure Zari',
+    fabricType: 'Pure Kanjeevaram Silk',
+    weightGsm: 385,
+    origin: 'Kanchipuram, Tamil Nadu',
+    giCertified: true,
     description: 'Pre-pleated modern saree gown that zips on in 30 seconds with no safety pins needed. Preserves the authentic heavy gold Korvai borders woven by master weavers.',
     rating: 4.98,
     reviewCount: 52,
@@ -1598,7 +1799,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Vermilion Red & Gold',
       length: 'Ankle Length (40")',
       washCare: 'Pure Silk Specialist Clean',
-      work: 'Korvai Pure Zari Temple Motifs'
+      work: 'Korvai Pure Zari Temple Motifs',
+      weightGsm: 385,
+      origin: 'Kanchipuram, Tamil Nadu'
     }
   },
   {
@@ -1616,6 +1819,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['XS', 'S', 'M', 'Custom Stitch to Measure'],
     fabric: 'Pure Chanderi Brocade & Organza',
+    fabricType: 'Chanderi Brocade',
+    weightGsm: 195,
+    origin: 'Chanderi, Madhya Pradesh',
+    giCertified: true,
     description: 'Limited edition of only 15 handcrafted sets. Real hammered gota patti ribbons stitched onto flared 3-tier sharara pants paired with a tailored keyhole kurti.',
     rating: 4.85,
     reviewCount: 16,
@@ -1626,7 +1833,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Deep Emerald Green',
       length: 'Sharara 42", Kurti 34"',
       washCare: 'Gentle Dry Clean',
-      work: 'Hand Hammered Gota Patti'
+      work: 'Hand Hammered Gota Patti',
+      weightGsm: 195,
+      origin: 'Chanderi, Madhya Pradesh'
     }
   },
   {
@@ -1644,6 +1853,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S (Bust 34-36)', 'M (Bust 36-38)'],
     fabric: 'Duchess Satin with Freshwater Seed Pearls',
+    fabricType: 'Duchess Satin',
+    weightGsm: 280,
+    origin: 'Como, Italy',
+    giCertified: false,
     description: 'Flawlessly tailored pearl-studded corset bodice with a flowing bias-cut satin skirt. Inspected and certified by Pearl Pick quality auditors to ensure pristine garment integrity and verified sizing.',
     rating: 4.91,
     reviewCount: 22,
@@ -1654,7 +1867,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Champagne Pearl Ivory',
       length: 'Floor Length (56")',
       washCare: 'Dry Clean Only',
-      work: 'Hand-sewn Freshwater Seed Pearls'
+      work: 'Hand-sewn Freshwater Seed Pearls',
+      weightGsm: 280,
+      origin: 'Como, Italy'
     }
   },
   {
@@ -1672,6 +1887,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['38 Regular', '40 Regular', '42 Regular', 'Bespoke to Measure'],
     fabric: 'Pure Banarasi Raw Silk & Floating Canvas',
+    fabricType: 'Pure Raw Silk',
+    weightGsm: 340,
+    origin: 'Jaipur, Rajasthan',
+    giCertified: true,
     description: 'Impeccably structured Bandhgala coat in midnight obsidian raw silk with hand-embroidered antique gold collar, brass monogram buttons, and tapered Jodhpur breeches.',
     rating: 4.96,
     reviewCount: 38,
@@ -1682,7 +1901,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Midnight Obsidian & Antique Gold',
       length: 'Coat 30", Trouser 41"',
       washCare: 'Dry Clean Only',
-      work: 'Hand Zardozi Collar & Crest Buttons'
+      work: 'Hand Zardozi Collar & Crest Buttons',
+      weightGsm: 340,
+      origin: 'Jaipur, Rajasthan'
     }
   },
   {
@@ -1700,6 +1921,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['38 Regular', '40 Regular', '42 Regular', 'Bespoke to Measure'],
     fabric: 'Dense Silk Velvet (420 GSM) & Duchess Satin',
+    fabricType: 'Silk Velvet',
+    weightGsm: 420,
+    origin: 'Como, Italy',
+    giCertified: false,
     description: 'Full floating horsehair canvas dinner jacket with satin silk peak lapels, double-breasted vest, and tailored trousers with satin side piping.',
     rating: 4.94,
     reviewCount: 26,
@@ -1710,7 +1935,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Bordeaux Velvet & Black Satin',
       length: 'Jacket 30.5", Inseam 32"',
       washCare: 'Specialist Velvet Dry Clean',
-      work: 'Hand-Rolled Peak Lapels & AMF Stitching'
+      work: 'Hand-Rolled Peak Lapels & AMF Stitching',
+      weightGsm: 420,
+      origin: 'Como, Italy'
     }
   },
   {
@@ -1728,6 +1955,10 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
     ],
     sizes: ['S (38)', 'M (40)', 'L (42)', 'XL (44)', 'Custom Fit'],
     fabric: 'Banarasi Brocade & Egyptian Giza Cotton',
+    fabricType: 'Banarasi Katan Silk',
+    weightGsm: 310,
+    origin: 'Varanasi, Uttar Pradesh',
+    giCertified: true,
     description: 'Golden ochre handwoven brocade Nehru jacket with real mother-of-pearl buttons paired with a breathable fine cotton kurta and churidar pants.',
     rating: 4.89,
     reviewCount: 31,
@@ -1738,7 +1969,9 @@ export const MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [
       color: 'Golden Ochre & Ivory',
       length: 'Jacket 28", Kurta 42"',
       washCare: 'Dry Clean for Bundi, Gentle Wash for Kurta',
-      work: 'Fine Zari Weave & Mother of Pearl'
+      work: 'Fine Zari Weave & Mother of Pearl',
+      weightGsm: 310,
+      origin: 'Varanasi, Uttar Pradesh'
     }
   }
 ];

@@ -10,9 +10,11 @@ export interface AuthUser {
   city: string;
   savedAddresses?: string[];
   walletBalanceINR: number;
+  accountStatus?: 'ACTIVE' | 'SUSPENDED' | 'PENDING_APPROVAL';
+  tailorProfileId?: string;
 }
 
-export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW' | 'INFO_REQUESTED' | 'SUSPENDED';
 
 export type GenderCategory = 'women' | 'men' | 'all';
 
@@ -228,7 +230,7 @@ export interface TailorProfile {
   completedOrders: number;
   specialties: string[];
   bio: string;
-  badge: 'Master Artisan' | 'Bridal Specialist' | 'Couturier' | 'Verified Pro';
+  badge: 'Master Artisan' | 'Bridal Specialist' | 'Couturier' | 'Verified Pro' | 'Master Atelier';
   startingPrice: number;
   averageTurnaroundDays: number;
   portfolio: PortfolioWork[];
@@ -239,6 +241,9 @@ export interface TailorProfile {
   idProofUrl?: string;
   businessLicenseUrl?: string;
   reviews?: Review[];
+  pricingRange?: string;
+  verificationDocuments?: TailorVerificationDocument[];
+  adminNotes?: string;
 }
 
 export interface QuotationItem {
@@ -246,6 +251,19 @@ export interface QuotationItem {
   description: string;
   amount: number;
   category: 'Fabric' | 'Stitching' | 'Embroidery & Handwork' | 'Lining & Accessories' | 'Rush Fee' | 'Finishing';
+}
+
+export interface NegotiationOffer {
+  id: string;
+  quotationId?: string;
+  senderRole: 'customer' | 'tailor';
+  senderName: string;
+  amount: number;
+  message?: string;
+  note?: string;
+  isFinalOffer?: boolean;
+  status: 'PROPOSED' | 'ACCEPTED' | 'COUNTERED' | 'REJECTED';
+  timestamp: string;
 }
 
 export interface TailorQuotation {
@@ -258,6 +276,12 @@ export interface TailorQuotation {
   tailorRating: number;
   items: QuotationItem[];
   totalAmount: number;
+  initialQuoteAmount?: number;
+  finalAgreedAmount?: number;
+  agreedAmount?: number;
+  customerAgreed?: boolean;
+  designerAgreed?: boolean;
+  negotiationHistory?: NegotiationOffer[];
   currency: string;
   estimatedDeliveryDays: number;
   proposedDeliveryDate: string;
@@ -268,7 +292,7 @@ export interface TailorQuotation {
     percentage: number;
     description: string;
   }[];
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  status: 'PENDING' | 'NEGOTIATING' | 'AGREED' | 'MUTUALLY_AGREED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
   createdAt: string;
 }
 
@@ -280,15 +304,28 @@ export interface QuotationRequest {
   dressDesignId?: string;
   designId?: string;
   measurementsId?: string;
+  selectedStandardSize?: string;
+  preferredTailorId?: string;
+  preferredTailorName?: string;
   variation: DressDesignVariation;
   targetBudget: number;
   neededByDate: string;
   specificInstructions: string;
   city?: string;
   createdAt: string;
-  status: 'OPEN' | 'QUOTATIONS_RECEIVED' | 'ACCEPTED' | 'CLOSED';
+  status: 'OPEN' | 'NEGOTIATING' | 'QUOTATIONS_RECEIVED' | 'ACCEPTED' | 'REJECTED' | 'MODIFICATION_REQUESTED' | 'CLOSED';
+  acceptedQuoteId?: string;
   quotations: TailorQuotation[];
 }
+
+export type DesignerOrderStatus =
+  | 'Pending'
+  | 'Accepted'
+  | 'Awaiting Payment'
+  | 'In Production'
+  | 'Quality Check'
+  | 'Shipped'
+  | 'Delivered';
 
 export type OrderStage = 
   | 'QUOTATION_ACCEPTED'
@@ -303,9 +340,26 @@ export type OrderStage =
   | 'COMPLETED'
   | 'CANCELLED';
 
-export type EscrowStatus = 'SECURED_IN_ESCROW' | 'PARTIALLY_RELEASED' | 'RELEASED_TO_TAILOR' | 'REFUNDED' | 'LOCKED';
+export type EscrowStatus = 'SECURED_IN_ESCROW' | 'PARTIALLY_RELEASED' | 'RELEASED_TO_TAILOR' | 'RELEASED' | 'REFUNDED' | 'LOCKED';
 
 export type OrderProgressStatus = 'IN_PRODUCTION' | 'FITTING_STAGE' | 'READY_FOR_DISPATCH' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
+
+export interface MilestoneProgressPhoto {
+  id: string;
+  url: string;
+  caption?: string;
+  uploadedAt: string;
+  uploadedBy?: string;
+  stageLabel?: string;
+}
+
+export interface MilestoneRating {
+  qualityRating: number;
+  timelinessRating: number;
+  improvementTags?: string[];
+  customerComment?: string;
+  ratedAt: string;
+}
 
 export interface OrderMilestone {
   id?: string;
@@ -319,7 +373,33 @@ export interface OrderMilestone {
   completedAt?: string;
   photoUrl?: string;
   photoProof?: string;
+  photoProofUrl?: string;
+  tailorNote?: string;
+  progressPhotos?: MilestoneProgressPhoto[];
   payoutReleased?: boolean;
+  customerRating?: MilestoneRating;
+}
+
+export interface HighEndFabric {
+  id: string;
+  name: string;
+  category: 'Heritage Silk' | 'Brocade & Zari' | 'Sheer & Organza' | 'Satin & Velvet' | 'Savile Row Suiting';
+  weightGsm: number;
+  composition: string;
+  weaveStructure: string;
+  threadCount: string;
+  drapeProfile: string;
+  textureHand: string;
+  origin: string;
+  careInstructions: string;
+  pricePerMeterINR: number;
+  colorTone: string;
+  hex: string;
+  imageUrl: string;
+  highResMacroUrl: string;
+  tailorRecommendation: string;
+  bestFor: string;
+  giCertified?: boolean;
 }
 
 export interface MeasurementSheet {
@@ -382,8 +462,11 @@ export interface Order {
   quotationId?: string;
   measurements?: MeasurementSheet;
   measurementsSnapshot?: MeasurementSheet;
-  currentStage?: OrderStage;
-  status?: OrderProgressStatus | OrderStage;
+  currentStage?: OrderStage | 'QUALITY_CHECK';
+  status?: OrderProgressStatus | OrderStage | 'DISPATCHED';
+  workflowStatus?: DesignerOrderStatus;
+  designerOrderStatus?: DesignerOrderStatus;
+  shippingAddress?: string;
   milestones: OrderMilestone[];
   totalAmount: number;
   paidAmount?: number;
@@ -414,6 +497,7 @@ export interface CustomerProfile {
   loyaltyTier?: string;
   totalOrders?: number;
   memberSince?: string;
+  accountStatus?: 'ACTIVE' | 'SUSPENDED';
 }
 
 export interface TailorVerificationDocument {
@@ -437,7 +521,7 @@ export interface ChatMessage {
   receiverId?: string;
   text?: string;
   content?: string;
-  type?: 'TEXT' | 'IMAGE' | 'MEASUREMENT_CARD' | 'FABRIC_SWATCH' | 'AUDIO_VOICE_NOTE';
+  type?: 'TEXT' | 'IMAGE' | 'MEASUREMENT_CARD' | 'FABRIC_SWATCH' | 'AUDIO_VOICE_NOTE' | 'NEGOTIATION_OFFER';
   timestamp: string;
   attachmentType?: 'image' | 'measurement' | 'quotation' | 'swatch' | 'audio';
   attachmentData?: any;
@@ -487,6 +571,8 @@ export interface AdminAnalytics {
   verifiedTailorsCount?: number;
   totalEscrowLocked?: number;
   activeDisputesCount?: number;
+  activeProductsCount?: number;
+  platformCommissionRate?: number;
 }
 
 export type AnalyticsSummary = AdminAnalytics & {
@@ -503,13 +589,27 @@ export interface MarketplaceProduct {
   title: string;
   category: 'ready-to-wear' | 'featured' | 'designer' | 'premium' | 'limited-edition' | 'curated-resale';
   categoryLabel: string;
+  designerId?: string;
   designerName: string;
   designerAvatar?: string;
   price: number;
   originalPrice?: number;
   images: string[];
+  imageUrl?: string;
+  frontImageUrl?: string;
+  backImageUrl?: string;
+  sideImageUrl?: string;
   sizes: string[];
   fabric: string;
+  fabricType?: string;
+  weightGsm?: number;
+  origin?: string;
+  giCertified?: boolean;
+  color?: string;
+  occasion?: string;
+  style?: string;
+  stockCount?: number;
+  moderationStatus?: 'APPROVED' | 'PENDING_REVIEW' | 'FLAGGED' | 'REMOVED';
   description: string;
   rating: number;
   reviewCount: number;
@@ -521,6 +621,8 @@ export interface MarketplaceProduct {
     length?: string;
     washCare?: string;
     work?: string;
+    weightGsm?: number;
+    origin?: string;
   };
   reviews?: {
     id: string;
@@ -531,15 +633,53 @@ export interface MarketplaceProduct {
   }[];
 }
 
+export interface CartItem {
+  id: string;
+  product: MarketplaceProduct;
+  selectedSize: string;
+  quantity: number;
+  customNotes?: string;
+  addedAt?: string;
+}
+
+export interface DisputeRecord {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  designerName?: string;
+  tailorName?: string;
+  reason: string;
+  amountINR: number;
+  status: 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_REFUND' | 'RESOLVED_RELEASE';
+  resolutionNote?: string;
+  createdAt: string;
+}
+
+export interface ApprovalAuditLog {
+  id: string;
+  targetId?: string;
+  targetName?: string;
+  tailorId?: string;
+  tailorName?: string;
+  action: 'APPROVED' | 'REJECTED' | 'INFO_REQUESTED' | 'SUSPENDED' | 'REACTIVATED' | 'PRODUCT_MODERATED' | 'COMMISSION_UPDATED' | 'DISPUTE_RESOLVED';
+  adminName?: string;
+  note?: string;
+  adminNote?: string;
+  timestamp: string;
+}
+
 export interface NotificationItem {
   id: string;
   title: string;
-  message: string;
-  type: 'design_ready' | 'quote_received' | 'tailor_accepted' | 'order_delivered' | 'system';
+  message?: string;
+  description?: string;
+  type: 'design_ready' | 'quote_received' | 'tailor_accepted' | 'order_delivered' | 'system' | 'ORDER' | 'ORDER_UPDATE';
   timestamp: string;
   isRead: boolean;
   actionTab?: string;
   actionId?: string;
+  actionUrl?: string;
 }
 
 export interface AIMeasurementScan {
@@ -558,4 +698,5 @@ export interface AIMeasurementScan {
   confidenceScore: number;
   calibratedAt: string;
 }
+
 

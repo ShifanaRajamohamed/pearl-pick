@@ -25,6 +25,7 @@ interface StyleChatModalProps {
   measurements: MeasurementSheet;
   messages: ChatMessage[];
   onSendMessage: (text: string, type?: 'TEXT' | 'IMAGE' | 'MEASUREMENT_CARD' | 'FABRIC_SWATCH' | 'AUDIO_VOICE_NOTE', extra?: any) => void;
+  onOpenFabricLibrary?: () => void;
 }
 
 export const StyleChatModal: React.FC<StyleChatModalProps> = ({
@@ -37,6 +38,7 @@ export const StyleChatModal: React.FC<StyleChatModalProps> = ({
   measurements,
   messages,
   onSendMessage,
+  onOpenFabricLibrary,
 }) => {
   const [inputText, setInputText] = useState<string>('');
   const [isTyping, setIsTyping] = useState(false);
@@ -162,6 +164,16 @@ export const StyleChatModal: React.FC<StyleChatModalProps> = ({
             <Layers className="w-3 h-3 text-[#C72C48]" />
             <span>Share 14-Point Measurements</span>
           </button>
+          {onOpenFabricLibrary && (
+            <button
+              id="chat-open-fabric-library-btn"
+              onClick={onOpenFabricLibrary}
+              className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#3D2C24] text-[#FAF7F2] hover:bg-[#2D2825] shrink-0 font-semibold text-[10px] shadow-xs cursor-pointer"
+            >
+              <Sparkles className="w-3 h-3 text-[#D4AF37]" />
+              <span>Browse High-End Fabric Library</span>
+            </button>
+          )}
           <button
             id="chat-req-swatch-btn"
             onClick={handleAttachFabricSwatch}
@@ -273,10 +285,25 @@ export const StyleChatModal: React.FC<StyleChatModalProps> = ({
 
                   {/* Swatch attachment preview */}
                   {msg.attachmentData && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E8DFC8] text-[#3D2C24]">
-                      <div className="flex items-center gap-2 mb-1">
+                    <div className="mt-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E8DFC8] text-[#3D2C24] space-y-2">
+                      {msg.attachmentData.imageUrl && (
+                        <div className="relative h-24 w-full rounded-lg overflow-hidden border border-[#E8DFC8]">
+                          <img
+                            src={msg.attachmentData.imageUrl}
+                            alt={msg.attachmentData.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                          {msg.attachmentData.pricePerMeterINR && (
+                            <span className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded bg-black/75 text-white text-[9px] font-mono">
+                              ₹{Number(msg.attachmentData.pricePerMeterINR).toLocaleString('en-IN')}/m
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
                         <span 
-                          className="w-4 h-4 rounded-full border border-black/20"
+                          className="w-4 h-4 rounded-full border border-black/20 shrink-0"
                           style={{ backgroundColor: msg.attachmentData.hex }}
                         />
                         <span className="font-bold text-[11px]">{msg.attachmentData.title}</span>

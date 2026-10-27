@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
-import { 
-  Sparkles, 
-  Search,
-  ChevronRight, 
-  Heart, 
-  Bell, 
-  Crown, 
-  Flame,
+import React from 'react';
+import {
+  Sparkles,
+  Heart,
+  ShoppingBag,
   ArrowRight,
-  ShieldCheck,
-  Award
+  Star,
+  CheckCircle2,
+  Scissors,
+  Layers
 } from 'lucide-react';
-import { DressDesign, TailorProfile } from '../../types';
-import { FashionAdviceSection } from './FashionAdviceSection';
+import { DressDesign, TailorProfile, MarketplaceProduct } from '../../types';
+import { StorefrontCategory } from '../Navbar';
+import { DesignerSpotlight } from './DesignerSpotlight';
 
 interface SplashScreenProps {
   userName?: string;
@@ -20,7 +19,7 @@ interface SplashScreenProps {
   onGenderChange?: (gender: 'women' | 'men') => void;
   onStartGenerator: (prompt?: string, dressType?: any) => void;
   onExploreTailors: () => void;
-  onExploreMarketplace: () => void;
+  onExploreMarketplace: (category?: StorefrontCategory) => void;
   onOpenMeasurements: () => void;
   onSelectDesign: (design: DressDesign) => void;
   onSelectTailor: (tailor: TailorProfile) => void;
@@ -29,405 +28,628 @@ interface SplashScreenProps {
   onOpenNotifications?: () => void;
   onOpenSearch?: () => void;
   featuredDesigns: DressDesign[];
+  tailors?: TailorProfile[];
   verifiedTailors: TailorProfile[];
+  products?: MarketplaceProduct[];
+  wishlistIds?: string[];
+  onToggleWishlist?: (productId: string) => void;
+  onAddToCart?: (product: MarketplaceProduct, size: string) => void;
+  onSelectProduct?: (product: MarketplaceProduct) => void;
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
-  userName = 'Aanya',
   gender = 'women',
   onGenderChange,
   onStartGenerator,
   onExploreTailors,
   onExploreMarketplace,
-  onOpenMeasurements,
   onSelectDesign,
   onSelectTailor,
   onRequestStitching,
-  onSelectCategory,
-  onOpenNotifications,
-  onOpenSearch,
   featuredDesigns,
-  verifiedTailors
+  tailors,
+  verifiedTailors,
+  products = [],
+  wishlistIds = [],
+  onToggleWishlist,
+  onAddToCart,
 }) => {
-  const [likedDesignIds, setLikedDesignIds] = useState<string[]>([]);
 
-  const toggleLike = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setLikedDesignIds((prev) => 
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
+  const categoryCards: {
+    id: StorefrontCategory;
+    title: string;
+    subtitle: string;
+    image: string;
+  }[] = [
+    {
+      id: 'women',
+      title: 'Women',
+      subtitle: 'Couture Gowns, Sarees & Lehengas',
+      image:
+        'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=700&auto=format&fit=crop&q=80',
+    },
+    {
+      id: 'men',
+      title: 'Men',
+      subtitle: 'Bandhgalas, Sherwanis & Bespoke Suits',
+      image:
+        'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=700&auto=format&fit=crop&q=80',
+    },
+    {
+      id: 'ethnic',
+      title: 'Ethnic',
+      subtitle: 'Handloom Banarasi, Kanjeevaram & Chikankari',
+      image:
+        'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=700&auto=format&fit=crop&q=80',
+    },
+    {
+      id: 'festive',
+      title: 'Festive & Bridal',
+      subtitle: 'Wedding Trousseau, Sangeet & Reception',
+      image:
+        'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=700&auto=format&fit=crop&q=80',
+    },
+    {
+      id: 'collections',
+      title: 'Collections',
+      subtitle: 'Limited-Edition Runway & Atelier Capsules',
+      image:
+        'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=700&auto=format&fit=crop&q=80',
+    },
+  ];
 
-  const categories = gender === 'men' 
-    ? [
-        { id: 'bandhgalas', label: 'Bandhgalas', icon: Crown },
-        { id: 'tuxedos', label: 'Savile Row Tuxedos', icon: Flame },
-        { id: 'sherwanis', label: 'Royal Sherwanis', icon: Sparkles },
-        { id: 'bundis', label: 'Nehru Jackets', icon: Award },
-        { id: 'suits', label: 'Italian Blazers', icon: ShieldCheck }
-      ]
-    : [
-        { id: 'bridal', label: 'Bridal Lehengas', icon: Sparkles },
-        { id: 'gowns', label: 'Couture Gowns', icon: Flame },
-        { id: 'anarkalis', label: 'Anarkali Suits', icon: Crown },
-        { id: 'sarees', label: 'Saree Gowns', icon: Award },
-        { id: 'cocktail', label: 'Cocktail Fusion', icon: ShieldCheck }
-      ];
-
-  const trendingDresses = gender === 'men'
-    ? [
-        {
-          id: 'trend-men-1',
-          title: 'The Royal Rajputana Bandhgala',
-          price: 32000,
-          rating: 4.96,
-          image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=700&auto=format&fit=crop&q=80',
-        },
-        {
-          id: 'trend-men-2',
-          title: 'Savile Row Bordeaux Velvet Dinner Suit',
-          price: 42000,
-          rating: 4.94,
-          image: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=700&auto=format&fit=crop&q=80',
-        }
-      ]
-    : [
-        {
-          id: 'trend-1',
-          title: 'Rosewater Pearl Saree Gown',
-          price: 3299,
-          rating: 4.9,
-          image: 'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=700&auto=format&fit=crop&q=80',
-        },
-        {
-          id: 'trend-2',
-          title: 'Midnight Organza Anarkali',
-          price: 1499,
-          rating: 4.8,
-          image: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=700&auto=format&fit=crop&q=80',
-        }
-      ];
-
-  const recommendedTailorsList = gender === 'men'
-    ? [
-        {
-          id: 'tailor-singhania',
-          monogram: 'S',
-          bgColor: 'bg-[#2D2825]',
-          name: 'Master R. K. Singhania & Sons',
-          rating: '4.98',
-          city: 'Connaught Place, New Delhi',
-          specialty: "Men's Bespoke Suiting & Royal Bandhgalas"
-        },
-        {
-          id: 'tailor-salim-chishti',
-          monogram: 'SC',
-          bgColor: 'bg-[#4A3728]',
-          name: 'Darzi-e-Khaas by Salim Chishti',
-          rating: '4.96',
-          city: 'Aminabad, Lucknow',
-          specialty: 'Royal Sherwanis & Hand Chikankari'
-        }
-      ]
-    : [
-        {
-          id: 'tailor-meera',
-          monogram: 'M',
-          bgColor: 'bg-[#4A3728]',
-          name: 'Meera Couture Studio',
-          rating: '4.9',
-          city: 'Jaipur',
-          specialty: 'Bridal Lehengas & Hand Embroidery'
-        },
-        {
-          id: 'tailor-draped-needle',
-          monogram: 'TD',
-          bgColor: 'bg-[#1F1A17]',
-          name: 'The Draped Needle',
-          rating: '4.8',
-          city: 'Mumbai',
-          specialty: 'Contemporary Corsets & Gowns'
-        }
-      ];
-
-  const handleSelectTrending = (item: typeof trendingDresses[0]) => {
-    const match = featuredDesigns.find((d) => d.title.toLowerCase().includes(item.title.toLowerCase().slice(0, 8)));
-    if (match) {
-      onSelectDesign(match);
-    } else if (featuredDesigns[0]) {
-      onSelectDesign(featuredDesigns[0]);
-    } else {
-      onStartGenerator(item.title);
-    }
-  };
+  const approvedProducts = products.filter(
+    (p) => !p.moderationStatus || p.moderationStatus === 'APPROVED'
+  );
+  const featuredProducts = approvedProducts.slice(0, 4);
+  const trendingProducts =
+    approvedProducts.slice(4, 8).length > 0
+      ? approvedProducts.slice(4, 8)
+      : approvedProducts.slice(0, 4);
 
   return (
-    <div id="discover-screen" className="w-full max-w-md mx-auto space-y-5 sm:space-y-6 pb-24 text-[#2D2825] px-4 sm:px-5">
-      
-      {/* 1. GREETING & NOTIFICATION BELL */}
-      <div className="flex items-center justify-between pt-1">
-        <div>
-          <span className="text-[10px] uppercase tracking-widest text-[#7D726A] font-semibold block">
-            {gender === 'men' ? "Men's Bespoke Maison" : "Haute Couture Maison"}
-          </span>
-          <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#2D2825]">
-            Good evening, {userName}
-          </h1>
+    <div id="storefront-homepage" className="w-full space-y-14 pb-8 text-[#2D2825]">
+      {/* 1. EDITORIAL FASHION COLLECTION HERO BANNER (Zara / Myntra Luxe Style) */}
+      <section className="relative rounded-3xl overflow-hidden bg-[#1F1B18] text-white border border-[#E4D9D1]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[420px] lg:min-h-[480px]">
+          {/* Left Editorial Copy */}
+          <div className="lg:col-span-7 p-8 sm:p-12 lg:p-14 flex flex-col justify-between z-10">
+            <div className="space-y-4 max-w-xl">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#E8C5CC] font-semibold">
+                Autumn / Festive Couture Edit 2026
+              </p>
+
+              <h1 className="font-serif text-3xl sm:text-5xl font-bold tracking-tight text-[#FAF7F2] leading-[1.12]">
+                {gender === 'men'
+                  ? 'Architectural Bespoke Suiting & Royal Heritage Wear'
+                  : 'Timeless Indian Couture & Custom-Crafted Silhouettes'}
+              </h1>
+
+              <p className="text-sm sm:text-base text-white/80 font-light leading-relaxed">
+                Shop ready-to-wear collections from verified master designers, or create your own custom dress in our 3-View AI Design Studio and commission a tailor to your exact measurements.
+              </p>
+            </div>
+
+            <div className="pt-8 flex flex-wrap items-center gap-3.5">
+              <button
+                id="hero-shop-collections-btn"
+                type="button"
+                onClick={() => onExploreMarketplace()}
+                className="px-6 py-3.5 rounded-xl bg-white text-[#2D2825] hover:bg-[#FAF7F2] text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+              >
+                <ShoppingBag className="w-4 h-4 text-[#8D2434]" />
+                <span>Shop Ready-To-Wear</span>
+              </button>
+
+              <button
+                id="hero-launch-ai-studio-btn"
+                type="button"
+                onClick={() => onStartGenerator()}
+                className="px-6 py-3.5 rounded-xl bg-[#8D2434] hover:bg-[#A1293B] text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+              >
+                <Sparkles className="w-4 h-4 text-[#FAF7F2]" />
+                <span>AI Custom Dress Studio</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              {/* Quick Women / Men Toggle */}
+              {onGenderChange && (
+                <div className="flex items-center bg-white/10 p-1 rounded-xl border border-white/15 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => onGenderChange('women')}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      gender === 'women'
+                        ? 'bg-white text-[#2D2825]'
+                        : 'text-white/75 hover:text-white'
+                    }`}
+                  >
+                    Women
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onGenderChange('men')}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      gender === 'men'
+                        ? 'bg-white text-[#2D2825]'
+                        : 'text-white/75 hover:text-white'
+                    }`}
+                  >
+                    Men
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Lookbook Visuals */}
+          <div className="lg:col-span-5 relative grid grid-cols-2 gap-2 p-3 sm:p-4 bg-[#2A2421]">
+            <div className="relative rounded-2xl overflow-hidden aspect-[3/4] h-full">
+              <img
+                src={
+                  gender === 'men'
+                    ? 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80'
+                    : 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=800&auto=format&fit=crop&q=80'
+                }
+                alt="Editorial Collection Primary"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-700"
+              />
+              <div className="absolute bottom-3 left-3 right-3 bg-black/60 backdrop-blur-md rounded-xl p-2.5 text-white">
+                <p className="text-[10px] uppercase tracking-wider text-[#D4AF37] font-bold">
+                  Signature Look
+                </p>
+                <p className="text-xs font-serif font-semibold truncate">
+                  {gender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Ivory Pearl Zardozi Lehenga'}
+                </p>
+              </div>
+            </div>
+
+            <div className="relative rounded-2xl overflow-hidden aspect-[3/4] h-full">
+              <img
+                src={
+                  gender === 'men'
+                    ? 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80'
+                    : 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=800&auto=format&fit=crop&q=80'
+                }
+                alt="Editorial Collection Secondary"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-700"
+              />
+              <div className="absolute bottom-3 left-3 right-3 bg-black/60 backdrop-blur-md rounded-xl p-2.5 text-white">
+                <p className="text-[10px] uppercase tracking-wider text-[#E8C5CC] font-bold">
+                  Bespoke Studio
+                </p>
+                <p className="text-xs font-serif font-semibold truncate">
+                  {gender === 'men' ? 'Savile Row 3-Piece Tuxedo' : 'Banarasi Silk Anarkali'}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={onOpenNotifications}
-          className="relative w-10 h-10 rounded-full bg-white hover:bg-[#FAF7F2] active:scale-95 transition-all cursor-pointer text-[#2D2825] flex items-center justify-center border border-[#ECE6DE] shadow-2xs"
-          title="Notifications"
-        >
-          <Bell className="w-4 h-4 text-[#2D2825]" />
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#8D2434] ring-2 ring-white" />
-        </button>
-      </div>
+      </section>
 
-      {/* 2. GENDER SEGMENTED CONTROLLER IN HERO */}
-      <div className="flex items-center p-1 rounded-2xl bg-[#EFE9E2] border border-[#E0D6CC] text-xs">
-        <button
-          onClick={() => onGenderChange ? onGenderChange('women') : null}
-          className={`flex-1 py-1.5 rounded-xl font-bold transition-all cursor-pointer text-center ${
-            gender === 'women'
-              ? 'bg-white text-[#8D2434] shadow-xs'
-              : 'text-[#7D726A] hover:text-[#2D2825]'
-          }`}
-        >
-          Women's Couture
-        </button>
-        <button
-          onClick={() => onGenderChange ? onGenderChange('men') : null}
-          className={`flex-1 py-1.5 rounded-xl font-bold transition-all cursor-pointer text-center ${
-            gender === 'men'
-              ? 'bg-[#2D2825] text-white shadow-xs'
-              : 'text-[#7D726A] hover:text-[#2D2825]'
-          }`}
-        >
-          Men's Bespoke Suiting
-        </button>
-      </div>
-
-      {/* 3. SEARCH BAR */}
-      <div 
-        onClick={onOpenSearch || onExploreMarketplace}
-        className="relative flex items-center w-full h-11 px-4 rounded-full bg-white border border-[#ECE6DE] text-xs text-[#7D726A] shadow-2xs hover:border-[#8D2434] transition-all cursor-pointer"
-      >
-        <Search className="w-4 h-4 text-[#7D726A] mr-2.5 shrink-0" />
-        <span className="font-light truncate">
-          {gender === 'men' ? 'Search Bandhgalas, Savile Row suits, sherwanis...' : 'Search lehengas, gowns, silks, master karigars...'}
-        </span>
-      </div>
-
-      {/* 4. EDITORIAL HERO BANNER */}
-      <div className="relative overflow-hidden rounded-[20px] bg-gradient-to-r from-[#2D2825] via-[#3D3531] to-[#4F4640] text-white p-4 sm:p-5 shadow-sm border border-[#2D2825]/30">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-2.5 z-10 max-w-[62%]">
-            <span className="text-[9px] uppercase tracking-widest text-[#E8C5CC] font-bold block">
-              {gender === 'men' ? 'Bespoke Craftsmanship' : 'Haute Couture Trousseau'}
+      {/* 2. SHOP BY CATEGORY (WOMEN, MEN, ETHNIC, FESTIVE, COLLECTIONS) */}
+      <section className="space-y-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-[#8D2434] font-bold block">
+              Curated Departments
             </span>
-            <h2 className="font-serif text-lg sm:text-xl font-bold leading-tight tracking-tight text-[#FAF7F2]">
-              {gender === 'men' 
-                ? 'Hand-canvassed Savile Row suits & royal Bandhgalas' 
-                : 'Made for your next unforgettable entrance'}
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#2D2825] mt-0.5">
+              Shop By Category
             </h2>
-            <button
-              onClick={onExploreMarketplace}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-white/25 bg-white/10 hover:bg-white/20 active:scale-95 text-xs font-medium tracking-wide text-white transition-all cursor-pointer"
-            >
-              <span>{gender === 'men' ? "Explore Men's Edit" : 'Explore the Pearl Edit'}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-white" />
-            </button>
           </div>
-
-          <div className="relative w-24 sm:w-28 aspect-[3/4] rounded-[14px] overflow-hidden shrink-0 shadow-md border border-white/15 bg-black/20">
-            <img
-              src={gender === 'men' 
-                ? "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600&auto=format&fit=crop&q=80"
-                : "https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=600&auto=format&fit=crop&q=80"
-              }
-              alt="Editorial Bespoke"
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-700"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 5. CATEGORIES (Horizontal pill scroll) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-        {categories.map((cat) => {
-          const Icon = cat.icon;
-          return (
-            <button
-              key={cat.id}
-              onClick={() => {
-                onSelectCategory(cat.label);
-                onStartGenerator(undefined, cat.label as any);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-[#ECE6DE] text-xs font-medium text-[#2D2825] hover:border-[#8D2434] hover:text-[#8D2434] active:scale-95 transition-all shadow-2xs whitespace-nowrap cursor-pointer shrink-0"
-            >
-              <Icon className="w-3.5 h-3.5 text-[#8D2434]" />
-              <span>{cat.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 6. AI STUDIO SHORTCUT CTA */}
-      <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-4 sm:p-5 shadow-2xs space-y-3.5">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#8D2434] uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{gender === 'men' ? "Men's Tailoring Studio" : "Bespoke Couture Studio"}</span>
-          </div>
-          <h3 className="font-serif text-lg font-bold text-[#2D2825]">
-            {gender === 'men' 
-              ? 'Draft a bespoke suit or sherwani tailored to your exact frame' 
-              : 'Design something only you could wear'}
-          </h3>
-          <p className="text-xs text-[#7D726A] font-light leading-relaxed">
-            {gender === 'men'
-              ? 'Select lapel widths, floating horsehair canvas, pure silks, and generate technical cutting patterns.'
-              : 'Turn a silhouette, textile, or dream vision into a production-ready couture concept.'}
-          </p>
-        </div>
-
-        <button
-          onClick={() => onStartGenerator()}
-          className="w-full h-12 rounded-[16px] bg-[#2D2825] hover:bg-[#1A1816] text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-        >
-          <Sparkles className="w-4 h-4 text-[#E8C5CC]" />
-          <span>{gender === 'men' ? "Launch Men's AI Studio" : "Launch AI Dress Studio"}</span>
-          <ArrowRight className="w-4 h-4 text-white" />
-        </button>
-      </div>
-
-      {/* 7. TRENDING PIECES (2-Column Grid) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-serif text-lg font-bold text-[#2D2825]">
-            {gender === 'men' ? 'Trending Menswear' : 'Trending Couture'}
-          </h2>
           <button
+            type="button"
             onClick={() => onExploreMarketplace()}
-            className="text-xs font-medium text-[#8D2434] hover:underline cursor-pointer"
+            className="text-xs font-bold uppercase tracking-wider text-[#8D2434] hover:underline flex items-center gap-1 cursor-pointer"
           >
-            See all
+            <span>View Full Catalog</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          {trendingDresses.map((dress) => {
-            const isLiked = likedDesignIds.includes(dress.id);
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          {categoryCards.map((cat) => (
+            <div
+              key={cat.id}
+              onClick={() => {
+                if (cat.id === 'women' && onGenderChange) onGenderChange('women');
+                if (cat.id === 'men' && onGenderChange) onGenderChange('men');
+                onExploreMarketplace(cat.id);
+              }}
+              className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-[#EFE9E2] border border-[#E4D9D1] cursor-pointer shadow-2xs hover:shadow-md transition-all"
+            >
+              <img
+                src={cat.image}
+                alt={cat.title}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 text-white">
+                <h3 className="font-serif text-lg font-bold tracking-tight">
+                  {cat.title}
+                </h3>
+                <p className="text-[11px] text-white/80 line-clamp-1 mt-0.5">
+                  {cat.subtitle}
+                </p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#E8C5CC] mt-2 group-hover:translate-x-1 transition-transform">
+                  Explore <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3. DESIGNER SPOTLIGHT — ROTATING CAROUSEL OF VERIFIED TAILORS & TOP-RATED COLLECTION ITEMS */}
+      <DesignerSpotlight
+        tailors={tailors && tailors.length > 0 ? tailors : verifiedTailors}
+        products={products}
+        onViewPortfolio={onSelectTailor}
+        onRequestStitching={onRequestStitching}
+        onExploreAllTailors={onExploreTailors}
+      />
+
+      {/* 4. FEATURED DRESSES (Myntra-Style E-Commerce Product Grid) */}
+      <section className="space-y-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-[#8D2434] font-bold block">
+              Ready-To-Wear & Designer Editions
+            </span>
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#2D2825] mt-0.5">
+              Featured Dresses
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => onExploreMarketplace()}
+            className="text-xs font-bold uppercase tracking-wider text-[#8D2434] hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <span>Explore All Dresses ({approvedProducts.length})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {featuredProducts.map((product) => {
+            const isWishlisted = wishlistIds.includes(product.id);
+            const discountPercent = product.originalPrice
+              ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+              : null;
 
             return (
               <div
-                key={dress.id}
-                onClick={() => handleSelectTrending(dress)}
-                className="group bg-white rounded-[16px] border border-[#ECE6DE] overflow-hidden p-2.5 shadow-2xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
+                key={product.id}
+                onClick={() => onExploreMarketplace()}
+                className="group bg-white rounded-2xl border border-[#ECE6DE] overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer"
               >
-                {/* 3:4 Aspect Ratio Image */}
-                <div className="relative aspect-[3/4] rounded-[12px] overflow-hidden bg-[#F5EFEA]">
+                <div>
+                  {/* 3:4 Product Image */}
+                  <div className="relative aspect-[3/4] bg-[#F5F2EB] overflow-hidden">
+                    <img
+                      src={product.images?.[0] || product.frontImageUrl}
+                      alt={product.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+                    />
+
+                    {/* Rating overlay (Bottom-Left like Myntra) */}
+                    <div className="absolute bottom-3 left-3 px-2 py-0.5 rounded bg-white/90 backdrop-blur-xs text-[11px] font-bold text-[#2D2825] flex items-center gap-1 shadow-2xs tabular-nums">
+                      <span>{product.rating}</span>
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                      <span className="text-[#7D726A] font-normal">| {product.reviewCount}</span>
+                    </div>
+
+                    {/* Wishlist Heart Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onToggleWishlist) onToggleWishlist(product.id);
+                      }}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center text-[#2D2825] hover:text-[#8D2434] shadow-2xs transition-colors cursor-pointer"
+                      title="Add to Wishlist"
+                    >
+                      <Heart
+                        className={`w-4 h-4 ${
+                          isWishlisted ? 'fill-[#8D2434] text-[#8D2434]' : 'text-[#2D2825]'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Product Metadata */}
+                  <div className="p-4 space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#2D2825] truncate">
+                      {product.designerName}
+                    </p>
+                    <h3 className="text-sm text-[#6E6359] font-normal line-clamp-1 group-hover:text-[#8D2434] transition-colors">
+                      {product.title}
+                    </h3>
+                    <p className="text-[11px] text-[#7D726A] truncate">
+                      {product.fabricType || product.fabric}
+                      {product.weightGsm ? ` · ${product.weightGsm} GSM` : ''}
+                      {product.origin ? ` · ${product.origin.split(',')[0]}` : ''}
+                    </p>
+
+                    <div className="pt-1 flex items-baseline gap-2 tabular-nums">
+                      <span className="text-sm font-bold text-[#2D2825]">
+                        ₹{product.price.toLocaleString('en-IN')}
+                      </span>
+                      {product.originalPrice && (
+                        <span className="text-xs text-[#7D726A] line-through">
+                          ₹{product.originalPrice.toLocaleString('en-IN')}
+                        </span>
+                      )}
+                      {discountPercent && discountPercent > 0 && (
+                        <span className="text-[11px] font-bold text-[#8D2434]">
+                          ({discountPercent}% OFF)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Bar */}
+                <div className="px-4 pb-4 pt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onAddToCart) {
+                        onAddToCart(product, product.sizes[0] || 'M');
+                      } else {
+                        onExploreMarketplace();
+                      }
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-[#2D2825] hover:bg-[#1A1816] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>Add to Bag</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartGenerator(
+                        `Custom bespoke version of ${product.title} crafted in ${product.fabric}`,
+                        product.category as any
+                      );
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#FBECEF] border border-[#E4D9D1] text-[#8D2434] text-xs font-bold transition-colors cursor-pointer"
+                    title="Customize this style in AI Studio"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 5. PROMINENT AI DRESS DESIGN STUDIO BANNER */}
+      <section className="rounded-3xl bg-white border border-[#E4D9D1] p-6 sm:p-10 shadow-2xs">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          <div className="lg:col-span-6 space-y-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#8D2434] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI Custom Dress Design Studio</span>
+            </p>
+
+            <h2 className="font-serif text-2xl sm:text-4xl font-bold text-[#2D2825] leading-tight">
+              Design Your Own Dress in 3 Coordinated Views — Front, Back & Side
+            </h2>
+
+            <p className="text-xs sm:text-sm text-[#6E6359] leading-relaxed">
+              Configure silhouette, neckline, sleeves, heritage fabric, colour palette, and embroidery. Our AI Studio generates a coordinated 3-panel fashion presentation sheet that you can send directly to verified designers for price quotations and custom tailoring.
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+              <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                <Layers className="w-4 h-4 text-[#8D2434] mb-1" />
+                <p className="text-xs font-bold text-[#2D2825]">1. Configure & Prompt</p>
+                <p className="text-[11px] text-[#7D726A] mt-0.5">
+                  Fabric, neckline, sleeves & custom details
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                <Sparkles className="w-4 h-4 text-[#8D2434] mb-1" />
+                <p className="text-xs font-bold text-[#2D2825]">2. 3-View Generation</p>
+                <p className="text-[11px] text-[#7D726A] mt-0.5">
+                  Consistent Front, Back & Side dress sheet
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE] col-span-2 sm:col-span-1">
+                <Scissors className="w-4 h-4 text-[#8D2434] mb-1" />
+                <p className="text-xs font-bold text-[#2D2825]">3. Negotiate & Order</p>
+                <p className="text-[11px] text-[#7D726A] mt-0.5">
+                  Compare quotes, bargain price & track milestones
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onStartGenerator()}
+                className="px-6 py-3.5 rounded-xl bg-[#2D2825] hover:bg-[#1A1816] text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                <span>Open AI Dress Studio</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              {featuredDesigns[0] && (
+                <button
+                  type="button"
+                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  className="px-5 py-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-xs font-bold text-[#2D2825] transition-all cursor-pointer"
+                >
+                  Inspect Sample 3-View Design Sheet
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 3-Panel Preview Showcase */}
+          <div className="lg:col-span-6 grid grid-cols-3 gap-3 bg-[#FAF7F2] p-4 rounded-2xl border border-[#ECE6DE]">
+            {featuredDesigns[0]?.variations[0] ? (
+              <>
+                <div
+                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  className="space-y-1.5 cursor-pointer group"
+                >
+                  <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
+                    <img
+                      src={featuredDesigns[0].variations[0].frontImageUrl}
+                      alt="Front View"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
+                    />
+                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-center text-[#2D2825]">
+                    1. Front View
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  className="space-y-1.5 cursor-pointer group"
+                >
+                  <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
+                    <img
+                      src={
+                        featuredDesigns[0].variations[0].backImageUrl ||
+                        featuredDesigns[0].variations[0].frontImageUrl
+                      }
+                      alt="Back View"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
+                    />
+                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-center text-[#2D2825]">
+                    2. Back View
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  className="space-y-1.5 cursor-pointer group"
+                >
+                  <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
+                    <img
+                      src={
+                        featuredDesigns[0].variations[0].sideImageUrl ||
+                        featuredDesigns[0].variations[0].frontImageUrl
+                      }
+                      alt="Side View"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
+                    />
+                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-center text-[#2D2825]">
+                    3. Side Profile
+                  </p>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* 6. TRENDING & RECOMMENDED PRODUCTS */}
+      <section className="space-y-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-[#8D2434] font-bold block">
+              Most Wishlisted This Week
+            </span>
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#2D2825] mt-0.5">
+              Trending & Recommended
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => onExploreMarketplace('festive')}
+            className="text-xs font-bold uppercase tracking-wider text-[#8D2434] hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <span>Shop Festive Edit</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {trendingProducts.map((product) => {
+            const isWishlisted = wishlistIds.includes(product.id);
+            return (
+              <div
+                key={`trend-${product.id}`}
+                onClick={() => onExploreMarketplace()}
+                className="group bg-white rounded-2xl border border-[#ECE6DE] overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer"
+              >
+                <div className="relative aspect-[3/4] bg-[#F5F2EB] overflow-hidden">
                   <img
-                    src={dress.image}
-                    alt={dress.title}
+                    src={product.images?.[0] || product.frontImageUrl}
+                    alt={product.title}
                     referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover object-top group-hover:scale-103 transition-transform duration-500"
+                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
                   />
                   <button
-                    onClick={(e) => toggleLike(dress.id, e)}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/85 backdrop-blur-xs flex items-center justify-center text-[#2D2825] hover:text-[#8D2434] transition-colors shadow-2xs"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onToggleWishlist) onToggleWishlist(product.id);
+                    }}
+                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-[#2D2825] hover:text-[#8D2434] shadow-2xs cursor-pointer"
                   >
                     <Heart
-                      className={`w-3.5 h-3.5 ${
-                        isLiked ? 'fill-[#8D2434] text-[#8D2434]' : 'text-[#2D2825]'
+                      className={`w-4 h-4 ${
+                        isWishlisted ? 'fill-[#8D2434] text-[#8D2434]' : 'text-[#2D2825]'
                       }`}
                     />
                   </button>
                 </div>
 
-                {/* Details */}
-                <div className="pt-2 space-y-1">
-                  <h3 className="font-serif text-xs font-semibold text-[#2D2825] line-clamp-1 leading-tight group-hover:text-[#8D2434] transition-colors">
-                    {dress.title}
-                  </h3>
-                  <div className="flex items-center justify-between text-xs pt-0.5">
-                    <span className="font-bold text-[#2D2825]">
-                      ₹{dress.price.toLocaleString()}
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#2D2825] truncate">
+                      {product.designerName}
                     </span>
-                    <span className="text-[11px] text-[#7D726A] flex items-center gap-0.5">
-                      ★ {dress.rating}
+                    <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> In Stock
                     </span>
+                  </div>
+                  <h3 className="text-sm text-[#6E6359] line-clamp-1">{product.title}</h3>
+                  <p className="text-[11px] text-[#7D726A] truncate">
+                    {product.fabricType || product.fabric}
+                    {product.weightGsm ? ` · ${product.weightGsm} GSM` : ''}
+                  </p>
+                  <div className="pt-1 flex items-center justify-between">
+                    <span className="text-sm font-bold text-[#2D2825] tabular-nums">
+                      ₹{product.price.toLocaleString('en-IN')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onAddToCart) onAddToCart(product, product.sizes[0] || 'M');
+                      }}
+                      className="text-xs font-bold text-[#8D2434] hover:underline cursor-pointer"
+                    >
+                      + Add to Bag
+                    </button>
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
-
-      {/* 8. RECOMMENDED VERIFIED MASTER TAILORS */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-serif text-lg font-bold text-[#2D2825]">
-            {gender === 'men' ? 'Master Tailoring Ateliers' : 'Verified Master Tailors'}
-          </h2>
-          <button
-            onClick={onExploreTailors}
-            className="text-xs font-medium text-[#8D2434] hover:underline cursor-pointer"
-          >
-            Explore all
-          </button>
-        </div>
-
-        <div className="space-y-2.5">
-          {recommendedTailorsList.map((tailor) => {
-            const fullTailor = verifiedTailors.find((t) => t.id === tailor.id) || verifiedTailors[0];
-
-            return (
-              <div
-                key={tailor.id}
-                onClick={() => onSelectTailor(fullTailor)}
-                className="bg-white rounded-[18px] border border-[#ECE6DE] p-3.5 shadow-2xs hover:border-[#8D2434] transition-all cursor-pointer flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-10 h-10 rounded-full ${tailor.bgColor} text-white font-serif font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs`}>
-                    {tailor.monogram}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-serif text-xs font-bold text-[#2D2825] truncate">
-                        {tailor.name}
-                      </span>
-                      <span className="text-[10px] text-[#416035] font-semibold bg-[#416035]/10 px-1.5 py-0.2 rounded">
-                        ★ {tailor.rating}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-[#7D726A] font-light block truncate">
-                      {tailor.specialty} • {tailor.city}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRequestStitching(fullTailor);
-                  }}
-                  className="px-3 py-1.5 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] text-[#2D2825] hover:bg-[#8D2434] hover:text-white hover:border-[#8D2434] text-xs font-semibold transition-all shrink-0 cursor-pointer"
-                >
-                  Book Tailor
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 9. FASHION ADVICE SECTION */}
-      <FashionAdviceSection onOpenGenerator={() => onStartGenerator()} />
-
+      </section>
     </div>
   );
 };

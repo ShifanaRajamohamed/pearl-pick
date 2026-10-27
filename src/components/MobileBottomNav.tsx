@@ -12,13 +12,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activeTab,
   setActiveTab,
   activeOrdersCount,
-  isMobileFrame = false,
 }) => {
   const navItems = [
-    { id: 'home', label: 'Explore', icon: Home },
+    { id: 'home', label: 'Home', icon: Home },
+    { id: 'marketplace', label: 'Shop', icon: ShoppingBag },
     { id: 'generator', label: 'AI Studio', icon: Sparkles },
-    { id: 'marketplace', label: 'Market', icon: ShoppingBag },
-    { id: 'tailors', label: 'Tailors', icon: Scissors },
+    { id: 'tailors', label: 'Designers', icon: Scissors },
     { id: 'orders', label: 'Orders', icon: Package, badge: activeOrdersCount },
     { id: 'profile', label: 'Profile', icon: User }
   ];
@@ -27,16 +26,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     <nav 
       id="mobile-bottom-nav" 
       aria-label="Mobile Navigation"
-      className={`${
-        isMobileFrame 
-          ? 'sticky sm:sticky bottom-0 left-0 right-0 w-full' 
-          : 'fixed bottom-0 left-0 right-0'
-      } z-40 bg-[#FAF7F2]/95 backdrop-blur-xl border-t border-[#ECE6DE] pt-2 pb-1.5 shadow-lg select-none`}
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-[#ECE6DE] pt-2 pb-1.5 shadow-lg select-none"
     >
       <div className="flex items-center justify-around w-full max-w-md mx-auto px-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
+          const isActive =
+            activeTab === item.id ||
+            (item.id === 'generator' && (activeTab === 'design-viewer' || activeTab === 'wardrobe')) ||
+            (item.id === 'orders' && activeTab === 'quotes');
           return (
             <button
               key={item.id}
@@ -68,7 +66,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           );
         })}
       </div>
-      <div className="w-24 h-1 bg-[#2D2825]/20 rounded-full mx-auto mt-1 sm:hidden" />
     </nav>
   );
 };
