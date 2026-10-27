@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { BellRing, X, CheckCircle2, Scissors, ShieldCheck, ArrowLeft, LogOut } from 'lucide-react';
 import { Navbar, StorefrontCategory } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -30,6 +30,10 @@ import { UserProfileModal } from './components/Customer/UserProfileModal';
 import { UPIPaymentModal } from './components/Customer/UPIPaymentModal';
 import { FabricLibraryModal } from './components/Customer/FabricLibraryModal';
 import { CartCheckoutModal } from './components/Customer/CartCheckoutModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { ProductDetailModal } from './components/Customer/ProductDetailModal';
+import { ShoppingToast, ToastData } from './components/Customer/ShoppingToast';
+import { WishlistView } from './components/Customer/WishlistView';
 
 import {
   DressDesign,
@@ -229,6 +233,36 @@ export default function App() {
   );
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [wishlistProductIds, setWishlistProductIds] = useState<string[]>([]);
+  const [selectedMarketplaceProduct, setSelectedMarketplaceProduct] = useState<MarketplaceProduct | null>(null);
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('pearl_pick_recent_views');
+      return stored ? JSON.parse(stored) : [MARKETPLACE_PRODUCTS[0]?.id, MARKETPLACE_PRODUCTS[1]?.id].filter(Boolean);
+    } catch {
+      return [MARKETPLACE_PRODUCTS[0]?.id, MARKETPLACE_PRODUCTS[1]?.id].filter(Boolean);
+    }
+  });
+
+  const handleSelectProduct = (product: MarketplaceProduct | null) => {
+    setSelectedMarketplaceProduct(product);
+    if (product) {
+      setRecentlyViewedIds((prev) => {
+        const next = [product.id, ...prev.filter((id) => id !== product.id)].slice(0, 8);
+        try {
+          localStorage.setItem('pearl_pick_recent_views', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+  };
+
+  const recentlyViewedProducts = useMemo(() => {
+    return recentlyViewedIds
+      .map((id) => products.find((p) => p.id === id))
+      .filter((p): p is MarketplaceProduct => Boolean(p));
+  }, [recentlyViewedIds, products]);
+
+  const [shoppingToast, setShoppingToast] = useState<ToastData | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [searchModalOpen, setSearchModalOpen] = useState<boolean>(false);
   const [notificationsModalOpen, setNotificationsModalOpen] = useState<boolean>(false);
@@ -408,30 +442,36 @@ export default function App() {
     setActiveTab('home');
   };
 
-  // Shopping Bag Handlers (Require customer authentication when adding to account bag)
-  const handleAddToCart = (product: MarketplaceProduct, selectedSize: string) => {
-    requireCustomerAuth(() => {
-      setCartItems((prev) => {
-        const existing = prev.find(
-          (item) => item.product.id === product.id && item.selectedSize === selectedSize
+  // Shopping Bag Handlers (Myntra / Amazon Smooth UX)
+  const handleAddToCart = (product: MarketplaceProduct, selectedSize: string = 'M') => {
+    setCartItems((prev) => {
+      const existing = prev.find(
+        (item) => item.product.id === product.id && item.selectedSize === selectedSize
+      );
+      if (existing) {
+        return prev.map((item) =>
+          item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item
         );
-        if (existing) {
-          return prev.map((item) =>
-            item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item
-          );
+      }
+      return [
+        ...prev,
+        {
+          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          product,
+          selectedSize,
+          quantity: 1,
+          addedAt: new Date().toISOString()
         }
-        return [
-          ...prev,
-          {
-            id: `cart-${Date.now()}`,
-            product,
-            selectedSize,
-            quantity: 1,
-            addedAt: new Date().toISOString()
-          }
-        ];
-      });
-      setCartModalOpen(true);
+      ];
+    });
+
+    setShoppingToast({
+      id: `toast-${Date.now()}`,
+      type: 'cart',
+      title: 'Added to Shopping Bag!',
+      message: `${product.title} (Size: ${selectedSize})`,
+      actionLabel: 'VIEW BAG',
+      onAction: () => setCartModalOpen(true)
     });
   };
 
@@ -456,11 +496,13 @@ export default function App() {
   };
 
   const handleCompleteCartCheckout = (
-    paymentMethod: string,
+    items: CartItem[],
     shippingAddress: string,
+    paymentMethod: string,
     transactionId: string
   ) => {
-    const newOrders: Order[] = cartItems.map((item, idx) => ({
+    const itemsToProcess = items && items.length > 0 ? items : cartItems;
+    const newOrders: Order[] = itemsToProcess.map((item, idx) => ({
       id: `ord-${Date.now().toString().slice(-5)}-${idx}`,
       orderNumber: `ORD-${Date.now().toString().slice(-5)}${idx}`,
       orderType: 'ready-to-wear',
@@ -508,6 +550,12 @@ export default function App() {
     setCartItems([]);
     setCartModalOpen(false);
     setActiveTab('orders');
+    setShoppingToast({
+      message: `🎉 Order Confirmed! ${newOrders.length} couture piece(s) placed. Tracking live.`,
+      productTitle: newOrders[0]?.marketplaceItem?.title || 'Couture Order',
+      actionLabel: 'VIEW ORDER',
+      onAction: () => setActiveTab('orders')
+    });
   };
 
   // Handlers for AI Dress Studio & Custom Ordering (Protected on generate/save/order)
@@ -1550,7 +1598,7 @@ export default function App() {
         openSearch={() => setSearchModalOpen(true)}
         openFabricLibrary={() => setFabricLibraryOpen(true)}
         openCart={() => setCartModalOpen(true)}
-        openWishlist={() => setActiveTab('marketplace')}
+        openWishlist={() => setActiveTab('wishlist')}
         currentUser={currentUser}
         onOpenCustomerAuth={() => setCustomerAuthModalOpen(true)}
         onLogout={handleLogout}
@@ -1594,6 +1642,8 @@ export default function App() {
             wishlistIds={wishlistProductIds}
             onToggleWishlist={handleToggleWishlist}
             onAddToCart={handleAddToCart}
+            onSelectProduct={(p) => handleSelectProduct(p)}
+            recentlyViewedProducts={recentlyViewedProducts}
           />
         )}
 
@@ -1709,9 +1759,21 @@ export default function App() {
             products={products}
             wishlistIds={wishlistProductIds}
             cartCount={totalCartCount}
+            initialCategory={
+              activeCategory === 'men'
+                ? "Men's Bespoke"
+                : activeCategory === 'festive'
+                ? 'Festive'
+                : activeCategory === 'ethnic'
+                ? 'Traditional'
+                : activeCategory === 'collections'
+                ? 'Bridal'
+                : 'All'
+            }
             onToggleWishlist={handleToggleWishlist}
             onBuyNow={handleBuyMarketplaceProduct}
             onAddToCart={handleAddToCart}
+            onSelectProduct={(p) => handleSelectProduct(p)}
             onOpenCart={() => setCartModalOpen(true)}
             onChatSeller={(designerName) => {
               const tailor =
@@ -1726,6 +1788,20 @@ export default function App() {
                 product.category as any
               );
             }}
+          />
+        )}
+
+        {activeTab === 'wishlist' && (
+          <WishlistView
+            wishlistIds={wishlistProductIds}
+            products={products}
+            onToggleWishlist={handleToggleWishlist}
+            onAddToCart={handleAddToCart}
+            onSelectProduct={(p) => handleSelectProduct(p)}
+            onExploreMarketplace={() => setActiveTab('marketplace')}
+            onOpenStudio={() => setActiveTab('generator')}
+            onOpenCart={() => setCartModalOpen(true)}
+            cartCount={totalCartCount}
           />
         )}
 
@@ -1910,6 +1986,12 @@ export default function App() {
         activeOrdersCount={orders.filter((o) => o.status !== 'DELIVERED').length}
       />
 
+      {/* Floating PWA Install & App Link Banner */}
+      <PWAInstallButton
+        variant="banner"
+        className="fixed bottom-20 lg:bottom-6 right-4 sm:right-6 z-40 max-w-sm"
+      />
+
       {/* Shopping Bag & Checkout Drawer */}
       <CartCheckoutModal
         isOpen={cartModalOpen}
@@ -1918,7 +2000,12 @@ export default function App() {
         onUpdateQuantity={handleUpdateCartQuantity}
         onUpdateSize={handleUpdateCartSize}
         onRemoveItem={handleRemoveCartItem}
-        onCompletePurchase={handleCompleteCartCheckout}
+        onClearCart={() => setCartItems([])}
+        onCompleteCheckout={handleCompleteCartCheckout}
+        onViewOrders={() => {
+          setCartModalOpen(false);
+          setActiveTab('orders');
+        }}
       />
 
       {/* Search Modal */}
@@ -1928,8 +2015,8 @@ export default function App() {
         products={products}
         tailors={tailors}
         designs={designs}
-        onSelectProduct={() => {
-          setActiveTab('marketplace');
+        onSelectProduct={(p) => {
+          handleSelectProduct(p);
           setSearchModalOpen(false);
         }}
         onSelectTailor={(t) => {
@@ -1940,6 +2027,10 @@ export default function App() {
         onSelectDesign={(d) => {
           setActiveDesign(d);
           setActiveTab('design-viewer');
+          setSearchModalOpen(false);
+        }}
+        onSelectCategory={(cat) => {
+          setActiveTab('marketplace');
           setSearchModalOpen(false);
         }}
       />
@@ -2051,6 +2142,45 @@ export default function App() {
           onPaymentSuccess={handleCompleteEscrowPayment}
         />
       )}
+
+      {/* Global Product Details View (Myntra / Amazon PDP Modal) */}
+      <ProductDetailModal
+        product={selectedMarketplaceProduct}
+        isOpen={Boolean(selectedMarketplaceProduct)}
+        onClose={() => setSelectedMarketplaceProduct(null)}
+        isWishlisted={Boolean(
+          selectedMarketplaceProduct &&
+            wishlistProductIds.includes(selectedMarketplaceProduct.id)
+        )}
+        onToggleWishlist={handleToggleWishlist}
+        onAddToCart={handleAddToCart}
+        onBuyNow={(prod, size) => {
+          handleAddToCart(prod, size);
+          setSelectedMarketplaceProduct(null);
+          setCartModalOpen(true);
+        }}
+        onRequestCustomStitch={(prod) => {
+          setSelectedMarketplaceProduct(null);
+          handleStartCustomizerFromPrompt(
+            `Custom couture variation of ${prod.title} in ${prod.fabric}`,
+            prod.category as any
+          );
+        }}
+        onChatSeller={(designerName) => {
+          setSelectedMarketplaceProduct(null);
+          const tailor =
+            tailors.find((t) =>
+              t.name.toLowerCase().includes(designerName.toLowerCase().slice(0, 4))
+            ) || tailors[0];
+          handleOpenChat(tailor.id, tailor.name);
+        }}
+      />
+
+      {/* Global Shopping Action Toast Notification (Myntra / Amazon style) */}
+      <ShoppingToast
+        toast={shoppingToast}
+        onClose={() => setShoppingToast(null)}
+      />
     </div>
   );
 }

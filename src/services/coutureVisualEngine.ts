@@ -665,18 +665,21 @@ export function resolveFabricFromPrompt(promptStr: string = '', fallbackFabric: 
 export function parseCustomerPromptToSpecs(
   promptText: string,
   defaults?: {
-    gender?: 'women' | 'men';
+    gender?: 'women' | 'men' | string;
     dressType?: string;
     color?: string;
     fabric?: string;
     neckline?: string;
     sleeve?: string;
     occasion?: string;
+    pattern?: string;
+    title?: string;
   }
 ) {
   const cleanPrompt = stripInjectedBrackets(promptText);
+  const normalizedGender: 'women' | 'men' = defaults?.gender === 'men' ? 'men' : 'women';
   const silInfo = resolveSilhouette({
-    gender: defaults?.gender,
+    gender: normalizedGender,
     dressType: defaults?.dressType,
     prompt: cleanPrompt
   });
@@ -687,7 +690,7 @@ export function parseCustomerPromptToSpecs(
   const fabricName = resolveFabricFromPrompt(cleanPrompt, defaults?.fabric || 'Pure Mulberry Silk');
 
   return {
-    gender: silInfo.gender,
+    gender: silInfo.gender as 'women' | 'men',
     silhouette: silInfo.silhouette,
     dressType: silInfo.label,
     color: theme.name,
@@ -697,8 +700,9 @@ export function parseCustomerPromptToSpecs(
     necklineCut: neckInfo.cut,
     sleeve: sleeveInfo.label,
     sleeveCut: sleeveInfo.cut,
-    pattern: patternInfo.label,
+    pattern: defaults?.pattern || patternInfo.label,
     patternMotif: patternInfo.motif,
+    title: defaults?.title || `${theme.name} ${silInfo.label}`,
     cleanPrompt
   };
 }

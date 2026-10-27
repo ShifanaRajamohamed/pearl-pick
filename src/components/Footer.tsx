@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, Scissors, Sparkles, Lock, Truck, Award } from 'lucide-react';
 import { StorefrontCategory } from './Navbar';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface FooterProps {
   onSelectCategory: (cat: StorefrontCategory) => void;
@@ -176,6 +177,9 @@ export const Footer: React.FC<FooterProps> = ({
               >
                 Verified Designer Directory
               </button>
+            </li>
+            <li className="pt-1 border-t border-[#ECE6DE]">
+              <PWAInstallButton variant="link" />
             </li>
           </ul>
         </div>

@@ -22,7 +22,7 @@ interface SearchModalProps {
   onSelectTailor: (tailor: TailorProfile) => void;
   onSelectProduct: (product: MarketplaceProduct) => void;
   onSelectDesign: (design: DressDesign) => void;
-  onSelectCategory: (categoryName: string) => void;
+  onSelectCategory?: (categoryName: string) => void;
 }
 
 export const SearchModal: React.FC<SearchModalProps> = ({
@@ -207,7 +207,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     <button
                       key={cat}
                       onClick={() => {
-                        onSelectCategory(cat);
+                        onSelectCategory?.(cat);
                         onClose();
                       }}
                       className="p-3 rounded-2xl bg-white border border-[#E4D9D1] text-left text-xs font-semibold text-[#2D2825] hover:border-[#4A3728] hover:shadow-xs transition-all flex items-center justify-between cursor-pointer"

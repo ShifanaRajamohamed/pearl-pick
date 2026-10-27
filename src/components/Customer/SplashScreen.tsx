@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Heart,
@@ -7,7 +7,14 @@ import {
   Star,
   CheckCircle2,
   Scissors,
-  Layers
+  Layers,
+  Clock,
+  Truck,
+  Tag,
+  Flame,
+  MapPin,
+  Percent,
+  Award
 } from 'lucide-react';
 import { DressDesign, TailorProfile, MarketplaceProduct } from '../../types';
 import { StorefrontCategory } from '../Navbar';
@@ -35,6 +42,7 @@ interface SplashScreenProps {
   onToggleWishlist?: (productId: string) => void;
   onAddToCart?: (product: MarketplaceProduct, size: string) => void;
   onSelectProduct?: (product: MarketplaceProduct) => void;
+  recentlyViewedProducts?: MarketplaceProduct[];
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
@@ -53,6 +61,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   wishlistIds = [],
   onToggleWishlist,
   onAddToCart,
+  onSelectProduct,
+  recentlyViewedProducts = [],
 }) => {
 
   const categoryCards: {
@@ -107,8 +117,81 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       ? approvedProducts.slice(4, 8)
       : approvedProducts.slice(0, 4);
 
+  // Live Flash Sale Countdown Timer (Myntra/Amazon style)
+  const [timeLeft, setTimeLeft] = useState({ hours: 4, minutes: 28, seconds: 15 });
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
+        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 };
+        if (prev.hours > 0) return { ...prev, hours: prev.hours - 1, minutes: 59, seconds: 59 };
+        return { hours: 5, minutes: 59, seconds: 59 };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
-    <div id="storefront-homepage" className="w-full space-y-14 pb-8 text-[#2D2825]">
+    <div id="storefront-homepage" className="w-full space-y-10 sm:space-y-12 pb-8 text-[#2D2825]">
+      {/* 0. MYNTRA / AMAZON LUXE STRIP: Delivery Pincode & Live Offers */}
+      <div className="rounded-2xl bg-white border border-[#ECE6DE] p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-[#2D2825]">
+          <MapPin className="w-4 h-4 text-[#8D2434]" />
+          <span>Deliver to <strong className="font-bold">Mumbai 400050</strong></span>
+          <span className="text-[#8E847D] hidden sm:inline">|</span>
+          <span className="text-emerald-700 font-semibold hidden sm:flex items-center gap-1">
+            <Truck className="w-3.5 h-3.5" />
+            Free Express Shipping on all prepaid orders
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#FAF7F2] border border-[#D5C7B8] text-[11px] font-bold text-[#8D2434]">
+            <Tag className="w-3 h-3" />
+            <span>Code <strong className="underline">PEARLFIRST</strong> (15% OFF)</span>
+          </div>
+
+          <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#8D2434] text-white text-[11px] font-bold shadow-xs tabular-nums">
+            <Flame className="w-3.5 h-3.5 text-[#FBECEF]" />
+            <span>Sale Ends: {String(timeLeft.hours).padStart(2, '0')}h : {String(timeLeft.minutes).padStart(2, '0')}m : {String(timeLeft.seconds).padStart(2, '0')}s</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 0.1 MYNTRA-STYLE CIRCULAR CATEGORY STORY BAR */}
+      <div className="overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex items-center gap-4 sm:gap-6 min-w-max px-1">
+          {[
+            { label: 'All Store', icon: '✨', cat: undefined },
+            { label: "Women's Couture", icon: '👗', cat: 'women' as StorefrontCategory },
+            { label: "Men's Bespoke", icon: '👔', cat: 'men' as StorefrontCategory },
+            { label: 'Heritage Silks', icon: '🥻', cat: 'ethnic' as StorefrontCategory },
+            { label: 'Bridal & Festive', icon: '👑', cat: 'festive' as StorefrontCategory },
+            { label: 'Runway Capsules', icon: '💎', cat: 'collections' as StorefrontCategory },
+            { label: 'AI Design Studio', icon: '✨', action: () => onStartGenerator() },
+            { label: 'Master Tailors', icon: '✂️', action: onExploreTailors },
+            { label: 'Flat 50% Deals', icon: '🔥', cat: 'featured' as any }
+          ].map((item, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => {
+                if (item.action) item.action();
+                else onExploreMarketplace(item.cat);
+              }}
+              className="flex flex-col items-center gap-1.5 group cursor-pointer focus:outline-none"
+            >
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border-2 border-[#E4D9D1] group-hover:border-[#8D2434] group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center text-xl sm:text-2xl">
+                {item.icon}
+              </div>
+              <span className="text-[11px] font-bold text-[#2D2825] group-hover:text-[#8D2434] transition-colors whitespace-nowrap">
+                {item.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 1. EDITORIAL FASHION COLLECTION HERO BANNER (Zara / Myntra Luxe Style) */}
       <section className="relative rounded-3xl overflow-hidden bg-[#1F1B18] text-white border border-[#E4D9D1]">
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[420px] lg:min-h-[480px]">
@@ -324,7 +407,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             return (
               <div
                 key={product.id}
-                onClick={() => onExploreMarketplace()}
+                onClick={() => {
+                  if (onSelectProduct) onSelectProduct(product);
+                  else onExploreMarketplace();
+                }}
                 className="group bg-white rounded-2xl border border-[#ECE6DE] overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer"
               >
                 <div>
@@ -589,7 +675,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             return (
               <div
                 key={`trend-${product.id}`}
-                onClick={() => onExploreMarketplace()}
+                onClick={() => {
+                  if (onSelectProduct) onSelectProduct(product);
+                  else onExploreMarketplace();
+                }}
                 className="group bg-white rounded-2xl border border-[#ECE6DE] overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer"
               >
                 <div className="relative aspect-[3/4] bg-[#F5F2EB] overflow-hidden">
@@ -650,6 +739,66 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           })}
         </div>
       </section>
+
+      {/* 7. RECENTLY VIEWED PRODUCTS (Amazon / Myntra Style) */}
+      {recentlyViewedProducts && recentlyViewedProducts.length > 0 && (
+        <section className="space-y-4 pt-6 border-t border-[#ECE6DE]">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[11px] uppercase tracking-[0.2em] text-[#8D2434] font-bold block">
+                Inspired By Your Browsing History
+              </span>
+              <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#2D2825] mt-0.5">
+                Recently Viewed Pieces
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => onExploreMarketplace()}
+              className="text-xs font-bold text-[#8D2434] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>View All</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 overflow-x-auto pb-3 no-scrollbar">
+            {recentlyViewedProducts.map((product) => (
+              <div
+                key={`recent-${product.id}`}
+                onClick={() => {
+                  if (onSelectProduct) onSelectProduct(product);
+                  else onExploreMarketplace();
+                }}
+                className="w-44 sm:w-48 shrink-0 bg-white rounded-xl border border-[#ECE6DE] p-2.5 hover:shadow-sm hover:border-[#8D2434] transition-all cursor-pointer group"
+              >
+                <div className="relative aspect-[3/4] rounded-lg overflow-hidden bg-[#FAF7F2] mb-2">
+                  <img
+                    src={product.images?.[0] || product.frontImageUrl}
+                    alt={product.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
+                <p className="text-[10px] font-semibold text-[#8D2434] uppercase truncate">
+                  {product.designerName}
+                </p>
+                <h4 className="font-serif text-xs font-bold text-[#2D2825] truncate">
+                  {product.title}
+                </h4>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-xs font-bold text-[#2D2825]">
+                    ₹{product.price.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-[10px] text-amber-600 font-bold flex items-center gap-0.5">
+                    <Star className="w-2.5 h-2.5 fill-current" /> {product.rating || '4.9'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

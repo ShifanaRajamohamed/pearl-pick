@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Heart,
   ChevronDown,
@@ -19,6 +19,7 @@ import {
   Award
 } from 'lucide-react';
 import { MarketplaceProduct } from '../../types';
+import { ProductDetailModal } from './ProductDetailModal';
 
 interface MarketplaceViewProps {
   products: MarketplaceProduct[];
@@ -31,6 +32,9 @@ interface MarketplaceViewProps {
   onOpenCart?: () => void;
   cartCount?: number;
   gender?: 'women' | 'men';
+  onSelectProduct?: (product: MarketplaceProduct) => void;
+  initialCategory?: string;
+  showWishlistOnly?: boolean;
 }
 
 interface GsmBracket {
@@ -168,10 +172,14 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   onChatSeller,
   onRequestCustomStitch,
   onOpenCart,
-  cartCount = 0
+  cartCount = 0,
+  onSelectProduct,
+  initialCategory,
+  showWishlistOnly = false
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'All');
+  const [onlyWishlisted, setOnlyWishlisted] = useState<boolean>(showWishlistOnly);
   const [selectedFabricTypes, setSelectedFabricTypes] = useState<string[]>([]);
   const [selectedGsmBrackets, setSelectedGsmBrackets] = useState<string[]>([]);
   const [maxGsmSlider, setMaxGsmSlider] = useState<number>(450);
@@ -180,6 +188,18 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   const [selectedColor, setSelectedColor] = useState<string>('All');
   const [selectedPriceBand, setSelectedPriceBand] = useState<string>('All');
   const [selectedSort, setSelectedSort] = useState<string>('Featured');
+
+  useEffect(() => {
+    if (initialCategory) {
+      setSelectedCategory(initialCategory);
+    }
+  }, [initialCategory]);
+
+  useEffect(() => {
+    if (showWishlistOnly !== undefined) {
+      setOnlyWishlisted(showWishlistOnly);
+    }
+  }, [showWishlistOnly]);
 
   // Mobile sidebar drawer toggle
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
@@ -289,6 +309,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         return false;
       }
 
+      if (onlyWishlisted && !wishlistIds.includes(p.id)) {
+        return false;
+      }
+
       if (selectedCategory !== 'All') {
         if (selectedCategory === "Men's Bespoke") {
           const isMen =
@@ -377,13 +401,19 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
     onlyGiCertified,
     selectedColor,
     selectedPriceBand,
-    selectedSort
+    selectedSort,
+    onlyWishlisted,
+    wishlistIds
   ]);
 
   const handleOpenProduct = (product: MarketplaceProduct) => {
-    setSelectedProduct(product);
-    setSelectedSize(product.sizes?.[0] || 'M');
-    setActivePhotoIndex(0);
+    if (onSelectProduct) {
+      onSelectProduct(product);
+    } else {
+      setSelectedProduct(product);
+      setSelectedSize(product.sizes?.[0] || 'M');
+      setActivePhotoIndex(0);
+    }
   };
 
   const handleQuickAddToCart = (e: React.MouseEvent, product: MarketplaceProduct) => {
@@ -833,9 +863,12 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
             <button
               key={cat}
               type="button"
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => {
+                setSelectedCategory(cat);
+                if (onlyWishlisted) setOnlyWishlisted(false);
+              }}
               className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                selectedCategory === cat
+                selectedCategory === cat && !onlyWishlisted
                   ? 'bg-[#2D2825] text-white shadow-2xs'
                   : 'bg-white border border-[#ECE6DE] text-[#2D2825] hover:border-[#8D2434]'
               }`}
@@ -843,6 +876,20 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               {cat}
             </button>
           ))}
+
+          {/* Quick Wishlist Filter Pill */}
+          <button
+            type="button"
+            onClick={() => setOnlyWishlisted((prev) => !prev)}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              onlyWishlisted
+                ? 'bg-[#8D2434] text-white shadow-2xs'
+                : 'bg-white border border-[#ECE6DE] text-[#2D2825] hover:border-[#8D2434]'
+            }`}
+          >
+            <Heart className={`w-3.5 h-3.5 ${onlyWishlisted ? 'fill-white text-white' : 'text-[#8D2434]'}`} />
+            <span>Wishlist {wishlistIds.length > 0 ? `(${wishlistIds.length})` : ''}</span>
+          </button>
         </div>
 
         {/* Sort Select */}
@@ -1112,232 +1159,25 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         </div>
       </div>
 
-      {/* 4. CONTIGUOUS PRODUCT DETAIL MODULE (PDP MODAL WITH FRONT, BACK & SIDE VIEWS + TEXTILE SPECS) */}
-      {selectedProduct && (
-        <div
-          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedProduct(null);
-          }}
-        >
-          {(() => {
-            const meta = resolveProductTextileMeta(selectedProduct);
-            return (
-              <div className="bg-white w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl border border-[#ECE6DE] grid grid-cols-1 md:grid-cols-2 my-auto max-h-[92vh] overflow-y-auto">
-                {/* Left Column: Multi-Angle Gallery (Front, Back, Side) */}
-                <div className="p-5 bg-[#FAF7F2] flex flex-col justify-between space-y-3">
-                  <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-[#F5EFEA] border border-[#E4D9D1]">
-                    <img
-                      src={
-                        getProductAngles(selectedProduct)[activePhotoIndex]?.url ||
-                        selectedProduct.images[0]
-                      }
-                      alt={selectedProduct.title}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover object-top"
-                    />
-                    <span className="absolute top-3 left-3 px-3 py-1 rounded-md bg-[#2D2825]/85 text-white text-[10px] font-bold uppercase tracking-wider">
-                      {getProductAngles(selectedProduct)[activePhotoIndex]?.label || 'Front View'}
-                    </span>
-                  </div>
-
-                  {/* 3-View Thumbnail Strip */}
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {getProductAngles(selectedProduct).map((angleObj, idx) => (
-                      <button
-                        key={angleObj.label}
-                        type="button"
-                        onClick={() => setActivePhotoIndex(idx)}
-                        className={`p-1.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2 bg-white ${
-                          activePhotoIndex === idx
-                            ? 'border-[#8D2434] ring-2 ring-[#8D2434]/15'
-                            : 'border-[#E4D9D1] opacity-75 hover:opacity-100'
-                        }`}
-                      >
-                        <img
-                          src={angleObj.url}
-                          alt={angleObj.label}
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-12 rounded-lg object-cover object-top shrink-0"
-                        />
-                        <span className="text-[10px] font-bold text-[#2D2825] leading-tight">
-                          {angleObj.label}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Right Column: Contiguous Purchase Module */}
-                <div className="p-6 flex flex-col justify-between space-y-5">
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-xs font-bold uppercase tracking-wider text-[#8D2434]">
-                          {selectedProduct.designerName} · Verified Atelier
-                        </span>
-                        <h2 className="font-serif text-2xl font-bold text-[#2D2825] mt-0.5">
-                          {selectedProduct.title}
-                        </h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedProduct(null)}
-                        className="w-8 h-8 rounded-full hover:bg-[#FAF7F2] flex items-center justify-center text-[#7D726A] cursor-pointer"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-baseline gap-3">
-                      <span className="font-serif text-2xl font-bold text-[#2D2825] tabular-nums">
-                        ₹{selectedProduct.price.toLocaleString('en-IN')}
-                      </span>
-                      {selectedProduct.originalPrice && (
-                        <span className="text-sm text-[#7D726A] line-through tabular-nums">
-                          ₹{selectedProduct.originalPrice.toLocaleString('en-IN')}
-                        </span>
-                      )}
-                      <span className="text-xs font-semibold text-emerald-700">
-                        In Stock · Ships in {selectedProduct.leadTimeDays || 5} Days
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[#5A4638] leading-relaxed">
-                      {selectedProduct.description}
-                    </p>
-
-                    {/* Granular Textile & Provenance Specifications Grid */}
-                    <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#E4D9D1] text-xs">
-                      <div>
-                        <span className="text-[10px] uppercase text-[#7D726A] font-bold block">
-                          Fabric Type
-                        </span>
-                        <span className="font-semibold text-[#2D2825]">{meta.fabricType}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase text-[#7D726A] font-bold block">
-                          Weight (GSM)
-                        </span>
-                        <span className="font-semibold text-[#2D2825] tabular-nums">
-                          {meta.weightGsm} GSM ({meta.weightGsm >= 300 ? 'Structured' : 'Fluid Drape'})
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase text-[#7D726A] font-bold block">
-                          Weave Origin
-                        </span>
-                        <span className="font-semibold text-[#2D2825]">{meta.origin}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase text-[#7D726A] font-bold block">
-                          Craftsmanship
-                        </span>
-                        <span className="font-semibold text-[#2D2825]">
-                          {selectedProduct.specs?.work || 'Hand-Finished Atelier Detailing'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Size Selector */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-[#2D2825] uppercase tracking-wider text-[11px]">
-                          Select Size
-                        </span>
-                        <span className="text-[11px] text-[#8D2434] font-medium">
-                          Includes 2-inch internal alteration margin
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {(selectedProduct.sizes?.length
-                          ? selectedProduct.sizes
-                          : ['XS', 'S', 'M', 'L', 'XL']
-                        ).map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => setSelectedSize(size)}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                              selectedSize === size
-                                ? 'bg-[#2D2825] text-white border-[#2D2825]'
-                                : 'bg-white text-[#2D2825] border-[#E4D9D1] hover:border-[#2D2825]'
-                            }`}
-                          >
-                            {size}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Primary CTAs */}
-                  <div className="space-y-2.5 pt-4 border-t border-[#E4D9D1]">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onAddToCart) {
-                            onAddToCart(selectedProduct, selectedSize);
-                          }
-                          setSelectedProduct(null);
-                          if (onOpenCart) onOpenCart();
-                        }}
-                        className="py-3.5 px-4 rounded-xl bg-[#2D2825] hover:bg-[#1A1816] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
-                        <span>Add to Bag</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onBuyNow(selectedProduct, selectedSize);
-                          setSelectedProduct(null);
-                        }}
-                        className="py-3.5 px-4 rounded-xl bg-[#8D2434] hover:bg-[#6E1B28] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Buy Ready-Made</span>
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {onRequestCustomStitch && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const prod = selectedProduct;
-                            setSelectedProduct(null);
-                            onRequestCustomStitch(prod);
-                          }}
-                          className="py-2.5 px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9E2] text-[#2D2825] border border-[#E4D9D1] text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Scissors className="w-3.5 h-3.5 text-[#8D2434]" />
-                          <span>Customize in AI Studio</span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const prod = selectedProduct;
-                          setSelectedProduct(null);
-                          onChatSeller(prod.designerName, prod);
-                        }}
-                        className="py-2.5 px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9E2] text-[#2D2825] border border-[#E4D9D1] text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 text-[#8D2434]" />
-                        <span>Message Designer</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+      {/* 4. CONTIGUOUS PRODUCT DETAIL MODULE (PDP MODAL) */}
+      <ProductDetailModal
+        product={selectedProduct}
+        isOpen={Boolean(selectedProduct)}
+        onClose={() => setSelectedProduct(null)}
+        isWishlisted={Boolean(selectedProduct && wishlistIds.includes(selectedProduct.id))}
+        onToggleWishlist={onToggleWishlist}
+        onAddToCart={(prod, sz) => {
+          if (onAddToCart) onAddToCart(prod, sz);
+          setSelectedProduct(null);
+          if (onOpenCart) onOpenCart();
+        }}
+        onBuyNow={(prod, sz) => {
+          onBuyNow(prod, sz);
+          setSelectedProduct(null);
+        }}
+        onRequestCustomStitch={onRequestCustomStitch}
+        onChatSeller={onChatSeller}
+      />
     </div>
   );
 };

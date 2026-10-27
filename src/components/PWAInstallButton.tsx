@@ -3,7 +3,7 @@ import { Download, Smartphone, X, CheckCircle2, Share, ExternalLink, MoreVertica
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface PWAInstallButtonProps {
-  variant?: 'button' | 'banner' | 'pill';
+  variant?: 'button' | 'banner' | 'pill' | 'link';
   className?: string;
 }
 
@@ -37,23 +37,38 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     }
   };
 
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const copyPWALink = async () => {
+    try {
+      const url = window.location.origin;
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Fallback
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }
+  };
+
   // Shared Modals Component
   const renderModals = () => (
     <>
-      {/* Android Chrome & Desktop Install Guide Modal */}
+      {/* Android & Desktop Guide Modal */}
       {showAndroidGuide && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] max-w-sm w-full p-6 border border-[#ECE6DE] shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] max-w-sm w-full p-6 border border-[#ECE6DE] shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#2D2825] text-white flex items-center justify-center font-serif text-sm font-bold shadow-2xs">
+                <div className="w-10 h-10 rounded-xl bg-[#2D2825] text-white flex items-center justify-center font-serif text-sm font-bold shadow-xs">
                   P
                 </div>
                 <div>
                   <h3 className="font-serif text-base font-bold text-[#2D2825] leading-tight">
-                    Install on Android Chrome
+                    {isAndroid ? 'Install on Android' : 'Install Pearl Pick App (PWA)'}
                   </h3>
-                  <p className="text-[11px] text-[#7D726A]">Bespoke Atelier Home Screen App</p>
+                  <p className="text-[11px] text-[#7D726A]">Bespoke Atelier Home Screen Web App</p>
                 </div>
               </div>
               <button
@@ -65,35 +80,81 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             </div>
 
             <div className="text-xs text-[#7D726A] space-y-2.5 font-light leading-relaxed">
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
-                <MoreVertical className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
-                <span>
-                  1. In Google Chrome, tap the <strong className="text-[#2D2825] font-semibold">three vertical dots (⋮)</strong> menu in the top-right corner.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
-                <Download className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
-                <span>
-                  2. Select <strong className="text-[#2D2825] font-semibold">Install app</strong> or <strong className="text-[#2D2825] font-semibold">Add to Home screen</strong>.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
-                <CheckCircle2 className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
-                <span>
-                  3. Tap <strong className="text-[#2D2825] font-semibold">Install</strong>. Pearl Pick will be added to your app drawer and home screen for full offline access!
-                </span>
-              </div>
+              {isAndroid ? (
+                <>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <MoreVertical className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      1. In Chrome, tap the <strong className="text-[#2D2825] font-semibold">three vertical dots (⋮)</strong> menu in the top-right corner.
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <Download className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      2. Select <strong className="text-[#2D2825] font-semibold">Install app</strong> or <strong className="text-[#2D2825] font-semibold">Add to Home screen</strong>.
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <CheckCircle2 className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      3. Tap <strong className="text-[#2D2825] font-semibold">Install</strong>. Pearl Pick will be added to your app drawer for instant offline access!
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <Download className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      1. In Chrome or Edge, click the <strong className="text-[#2D2825] font-semibold">Install icon (⊕)</strong> on the right side of the URL address bar.
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <MoreVertical className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      2. Or click the browser menu <strong className="text-[#2D2825] font-semibold">(⋮) &gt; &apos;Save and share&apos; &gt; &apos;Install Pearl Pick&apos;</strong>.
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE]">
+                    <CheckCircle2 className="w-4 h-4 text-[#8D2434] shrink-0 mt-0.5" />
+                    <span>
+                      3. Pearl Pick opens in its own clean window like a native desktop app!
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Quick Share / Copy PWA Link Button */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={copyPWALink}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D5C7B8] hover:bg-[#F3EFE9] text-xs font-semibold text-[#2D2825] transition-all cursor-pointer"
+              >
+                {copiedLink ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="text-emerald-700 font-bold">PWA Link Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Share className="w-3.5 h-3.5 text-[#8D2434]" />
+                    <span>Copy PWA Link ({typeof window !== 'undefined' ? window.location.origin : 'App URL'})</span>
+                  </>
+                )}
+              </button>
             </div>
 
             {isInIframe && (
               <a
-                href={window.location.href}
+                href={typeof window !== 'undefined' ? window.location.href : '#'}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-full bg-[#FAF7F2] text-[#2D2825] border border-[#ECE6DE] text-xs font-semibold hover:bg-[#ECE6DE] transition-colors"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open in Full Chrome Tab</span>
+                <span>Open in Full Browser Tab</span>
               </a>
             )}
 
@@ -109,11 +170,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
       {/* iOS Safari Guide Modal */}
       {showIOSGuide && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] max-w-sm w-full p-6 border border-[#ECE6DE] shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] max-w-sm w-full p-6 border border-[#ECE6DE] shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#2D2825] text-white flex items-center justify-center font-serif text-sm font-bold shadow-2xs">
+                <div className="w-10 h-10 rounded-xl bg-[#2D2825] text-white flex items-center justify-center font-serif text-sm font-bold shadow-xs">
                   P
                 </div>
                 <div>
@@ -151,6 +212,24 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </span>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={copyPWALink}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D5C7B8] hover:bg-[#F3EFE9] text-xs font-semibold text-[#2D2825] transition-all cursor-pointer"
+            >
+              {copiedLink ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="text-emerald-700 font-bold">PWA Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share className="w-3.5 h-3.5 text-[#8D2434]" />
+                  <span>Copy PWA Link</span>
+                </>
+              )}
+            </button>
 
             <button
               onClick={() => setShowIOSGuide(false)}
@@ -228,6 +307,24 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             </button>
           </div>
         </div>
+        {renderModals()}
+      </>
+    );
+  }
+
+  // Variant: Simple text link (for footer / navigation lists)
+  if (variant === 'link') {
+    return (
+      <>
+        <button
+          id="btn-pwa-install-link"
+          type="button"
+          onClick={handleInstallClick}
+          className={`inline-flex items-center gap-1.5 text-xs text-[#6E6359] hover:text-[#8D2434] transition-colors cursor-pointer ${className}`}
+        >
+          <Download className="w-3.5 h-3.5 text-[#8D2434]" />
+          <span>Install Web App (PWA)</span>
+        </button>
         {renderModals()}
       </>
     );
