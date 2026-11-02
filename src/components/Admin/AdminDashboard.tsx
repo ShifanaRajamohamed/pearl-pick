@@ -37,8 +37,10 @@ interface AdminDashboardProps {
   analytics: AnalyticsSummary;
   onApproveTailor: (tailorId: string) => void;
   onRejectTailor: (tailorId: string, reason: string) => void;
+  onRevokeTailor?: (tailorId: string, reason: string) => void;
   onRequestTailorInfo?: (tailorId: string, note: string) => void;
   onToggleSuspendTailor?: (tailorId: string) => void;
+  onToggleSuspendUser?: (userId: string, currentStatus: 'ACTIVE' | 'SUSPENDED') => void;
   onModerateProduct?: (
     productId: string,
     status: 'APPROVED' | 'FLAGGED' | 'REMOVED'
@@ -62,8 +64,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   commissionRate = 12,
   onApproveTailor,
   onRejectTailor,
+  onRevokeTailor,
   onRequestTailorInfo,
   onToggleSuspendTailor,
+  onToggleSuspendUser,
   onModerateProduct,
   onResolveDispute,
   onUpdateCommissionRate,
@@ -72,7 +76,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<
     'approvals' | 'users' | 'products' | 'orders_disputes' | 'analytics'
   >('approvals');
-  const [suspendedCustomerIds, setSuspendedCustomerIds] = useState<string[]>([]);
   const [localCommissionInput, setLocalCommissionInput] = useState<number>(commissionRate);
 
   const pendingTailors = tailors.filter(
@@ -82,10 +85,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       t.verificationStatus === 'INFO_REQUESTED'
   );
   const verifiedTailors = tailors.filter((t) => t.verificationStatus === 'VERIFIED');
-  const suspendedTailors = tailors.filter((t) => t.verificationStatus === 'SUSPENDED');
 
   // Real Backend/State-Derived Metrics (8 required metrics)
-  const totalCustomersCount = Math.max(customers.length, 4);
+  const totalCustomersCount = customers.filter(
+    (u) => String(u.role).toUpperCase() === 'CUSTOMER'
+  ).length || Math.max(customers.length, 1);
   const totalDesignersCount = tailors.length;
   const pendingApprovalsCount = pendingTailors.length;
   const activeProductsCount = products.filter(
@@ -189,7 +193,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#E4D9D1]">
         {[
           { id: 'approvals', label: `Designer Approvals (${pendingApprovalsCount})`, icon: ShieldCheck },
-          { id: 'users', label: `User Management (${totalCustomersCount + totalDesignersCount})`, icon: Users },
+          { id: 'users', label: `User Management (${customers.length || totalCustomersCount + totalDesignersCount})`, icon: Users },
           { id: 'products', label: `Product Moderation (${products.length})`, icon: Package },
           { id: 'orders_disputes', label: `Orders, Disputes & Commission (${totalOrdersCount})`, icon: Scale },
           { id: 'analytics', label: `Analytics & Audit History (${auditLogs.length})`, icon: TrendingUp }
@@ -232,7 +236,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 All Designer Applications Reviewed
               </h3>
               <p className="text-xs text-[#7D726A]">
-                No pending designer applications in the queue. You can also manage active or suspended designers below.
+                No pending designer applications in the queue. You can also manage verified, rejected, or suspended designers below.
               </p>
             </div>
           ) : (
@@ -349,73 +353,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* Approved & Suspended Designers Directory */}
+          {/* Approved, Rejected & Suspended Designers Directory */}
           <div className="pt-4 border-t border-[#E4D9D1] space-y-3">
             <h3 className="font-serif text-lg font-bold text-[#2D2825]">
-              All Registered Designers — Suspend or Reactivate ({tailors.length})
+              All Registered Designers — Verification & Account Status ({tailors.length})
             </h3>
             <div className="bg-white rounded-3xl border border-[#E4D9D1] divide-y divide-[#E4D9D1] overflow-hidden text-xs">
-              {tailors.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <img
-                      src={t.avatar}
-                      alt={t.name}
-                      referrerPolicy="no-referrer"
-                      className="w-11 h-11 rounded-full object-cover border border-[#E4D9D1]"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-[#2D2825]">{t.name}</h4>
-                        <span className="text-[#7D726A]">({t.shopName})</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                            t.verificationStatus === 'VERIFIED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : t.verificationStatus === 'SUSPENDED'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {t.verificationStatus}
-                        </span>
+              {tailors.map((t) => {
+                const acctStatus = t.accountStatus || 'ACTIVE';
+                return (
+                  <div
+                    key={t.id}
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <img
+                        src={t.avatar}
+                        alt={t.name}
+                        referrerPolicy="no-referrer"
+                        className="w-11 h-11 rounded-full object-cover border border-[#E4D9D1]"
+                      />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-bold text-[#2D2825]">{t.name}</h4>
+                          <span className="text-[#7D726A]">({t.shopName})</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              t.verificationStatus === 'VERIFIED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : t.verificationStatus === 'REJECTED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            KYC: {t.verificationStatus}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              acctStatus === 'SUSPENDED'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            ACCOUNT: {acctStatus}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#7D726A]">
+                          {t.city} • Rating: {t.rating}★ • {t.completedOrders} completed orders
+                          {t.rejectionReason ? ` • Reason: ${t.rejectionReason}` : ''}
+                        </p>
                       </div>
-                      <p className="text-[11px] text-[#7D726A]">
-                        {t.city} • Rating: {t.rating}★ • {t.completedOrders} completed orders
-                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {t.verificationStatus !== 'VERIFIED' && (
+                        <button
+                          onClick={() => handleApprove(t.id)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-700 text-white font-bold text-xs cursor-pointer"
+                        >
+                          Approve Verification
+                        </button>
+                      )}
+                      {t.verificationStatus === 'VERIFIED' && onRevokeTailor && (
+                        <button
+                          onClick={() =>
+                            onRevokeTailor(
+                              t.id,
+                              'Designer verification revoked by platform governance for compliance review.'
+                            )
+                          }
+                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs cursor-pointer"
+                        >
+                          Revoke Verification
+                        </button>
+                      )}
+                      {onToggleSuspendTailor && (
+                        <button
+                          onClick={() => onToggleSuspendTailor(t.id)}
+                          className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Ban className="w-3 h-3" />
+                          <span>
+                            {acctStatus === 'SUSPENDED' ? 'Reactivate Account' : 'Suspend Account'}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    {t.verificationStatus !== 'VERIFIED' && (
-                      <button
-                        onClick={() => handleApprove(t.id)}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-700 text-white font-bold text-xs cursor-pointer"
-                      >
-                        Approve / Reactivate
-                      </button>
-                    )}
-                    {onToggleSuspendTailor && t.verificationStatus === 'VERIFIED' && (
-                      <button
-                        onClick={() => onToggleSuspendTailor(t.id)}
-                        className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
-                      >
-                        <Ban className="w-3 h-3" />
-                        <span>Suspend Designer</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: USER MANAGEMENT (CUSTOMERS & DESIGNERS) */}
+      {/* TAB 2: USER MANAGEMENT (CUSTOMERS, DESIGNERS & ADMINS) */}
       {activeTab === 'users' && (
         <div className="space-y-6">
           <div>
@@ -423,44 +455,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               Platform User & Role Management
             </h2>
             <p className="text-xs text-[#7D726A]">
-              Monitor registered customers and designers, manage account statuses, and enforce role-based access permissions.
+              Monitor registered customers, designers, and admins, manage account statuses (ACTIVE / SUSPENDED), and enforce role-based access permissions.
             </p>
           </div>
 
           <div className="bg-white rounded-3xl border border-[#E4D9D1] overflow-hidden">
             <div className="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E4D9D1] grid grid-cols-12 text-[10px] font-bold uppercase tracking-wider text-[#7D726A]">
               <div className="col-span-4">User / Account</div>
-              <div className="col-span-2">Role</div>
+              <div className="col-span-2">Canonical Role</div>
               <div className="col-span-3">Location & Contact</div>
-              <div className="col-span-1">Status</div>
+              <div className="col-span-1">Account Status</div>
               <div className="col-span-2 text-right">Action</div>
             </div>
 
             <div className="divide-y divide-[#E4D9D1] text-xs">
-              {[
-                ...customers,
-                {
-                  id: 'cust-2',
-                  name: 'Riya Kapoor',
-                  phone: '+91 98209 11223',
-                  email: 'riya.kapoor@delhi.in',
-                  role: 'customer' as const,
-                  avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80',
-                  city: 'New Delhi, Delhi NCR',
-                  walletBalanceINR: 34000
-                },
-                {
-                  id: 'cust-3',
-                  name: 'Arjun Singhania',
-                  phone: '+91 98111 88990',
-                  email: 'arjun.s@jaipur.in',
-                  role: 'customer' as const,
-                  avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
-                  city: 'Jaipur, Rajasthan',
-                  walletBalanceINR: 68000
-                }
-              ].map((u) => {
-                const isSusp = suspendedCustomerIds.includes(u.id);
+              {customers.map((u) => {
+                const acctStatus = u.accountStatus === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+                const isSusp = acctStatus === 'SUSPENDED';
+                const roleLabel = String(u.role).toUpperCase();
                 return (
                   <div key={u.id} className="px-5 py-3.5 grid grid-cols-12 items-center gap-2">
                     <div className="col-span-4 flex items-center gap-3">
@@ -477,7 +489,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                     <div className="col-span-2">
                       <span className="px-2.5 py-0.5 rounded-full bg-[#FAF7F2] border border-[#E4D9D1] text-[10px] font-bold uppercase text-[#2D2825]">
-                        {u.role}
+                        {roleLabel}
                       </span>
                     </div>
                     <div className="col-span-3 text-[#5A4638]">
@@ -492,19 +504,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             : 'bg-emerald-100 text-emerald-800'
                         }`}
                       >
-                        {isSusp ? 'SUSPENDED' : 'ACTIVE'}
+                        {acctStatus}
                       </span>
                     </div>
                     <div className="col-span-2 text-right">
-                      {u.role !== 'admin' && (
+                      {roleLabel !== 'ADMIN' && onToggleSuspendUser && (
                         <button
-                          onClick={() =>
-                            setSuspendedCustomerIds((prev) =>
-                              prev.includes(u.id)
-                                ? prev.filter((id) => id !== u.id)
-                                : [...prev, u.id]
-                            )
-                          }
+                          onClick={() => onToggleSuspendUser(u.id, acctStatus)}
                           className="px-3 py-1 rounded-lg border border-[#E4D9D1] hover:bg-[#FAF7F2] text-[11px] font-bold text-[#2D2825] cursor-pointer"
                         >
                           {isSusp ? 'Reactivate' : 'Suspend'}
@@ -671,7 +677,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-[#2D2825] font-semibold">
-                    Customer: {dsp.customerName} vs. Designer: {dsp.designerName}
+                    Customer: {dsp.customerName} vs. Designer: {dsp.designerName || dsp.tailorName}
                   </p>
                   <p className="text-xs text-[#5A4638] bg-[#FAF7F2] p-3 rounded-xl border border-[#E4D9D1]">
                     "{dsp.reason}"
@@ -823,13 +829,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="px-2 py-0.5 rounded bg-[#2D2825] text-white text-[9px] font-bold uppercase">
                         {log.action}
                       </span>
-                      <span className="font-bold text-[#2D2825]">{log.targetName}</span>
+                      <span className="font-bold text-[#2D2825]">
+                        {log.targetName || log.tailorName}
+                      </span>
                     </div>
-                    <p className="text-[#5A4638] mt-1">{log.note}</p>
+                    <p className="text-[#5A4638] mt-1">
+                      {log.reason || log.note || log.adminNote}
+                    </p>
                   </div>
                   <div className="text-right text-[10px] text-[#7D726A] shrink-0 tabular-nums">
                     <div>{log.timestamp}</div>
-                    <div>By {log.adminName}</div>
+                    <div>By {log.actorName || log.adminName || 'Admin'}</div>
                   </div>
                 </div>
               ))}

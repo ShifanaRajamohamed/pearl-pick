@@ -410,30 +410,8 @@ export const TailorDashboard: React.FC<TailorDashboardProps> = ({
           </div>
         </div>
 
-        {/* Switch Active Designer Profile (Approved vs Pending Demo) + KYC Button */}
+        {/* Verification & KYC Button (Strictly isolated to authenticated designer's own profile) */}
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
-          {allTailors.length > 1 && onSelectActiveTailor && (
-            <div className="flex items-center gap-2 bg-[#FAF7F2] px-3 py-2 rounded-2xl border border-[#E4D9D1]">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#7D726A]">
-                Test Designer Account:
-              </span>
-              <select
-                value={currentTailor.id}
-                onChange={(e) => {
-                  const found = allTailors.find((t) => t.id === e.target.value);
-                  if (found) onSelectActiveTailor(found);
-                }}
-                className="text-xs font-bold text-[#2D2825] bg-transparent outline-none cursor-pointer"
-              >
-                {allTailors.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.verificationStatus})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           <button
             onClick={onOpenVerificationModal}
             className="px-4 py-2.5 rounded-xl bg-[#2D2825] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#8D2434] transition-all cursor-pointer flex items-center gap-2"

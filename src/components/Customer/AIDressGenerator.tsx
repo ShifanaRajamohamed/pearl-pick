@@ -1,20 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Sparkles, 
-  RotateCcw, 
-  Bell, 
-  Calendar, 
-  Layers, 
-  ChevronDown, 
-  Camera, 
-  PenTool, 
-  Eye, 
+import {
+  Sparkles,
+  RotateCcw,
+  Bell,
+  Calendar,
+  Layers,
+  ChevronDown,
+  Camera,
+  PenTool,
+  Eye,
   Package,
-  Wand2
+  Wand2,
+  AlertCircle,
+  RefreshCw,
+  CheckCircle2,
+  ShieldAlert
 } from 'lucide-react';
 import { DressDesign } from '../../types';
 import { FabricSwatchGallery, PREDEFINED_FABRICS } from './FabricSwatchGallery';
-import { generateCohesiveCoutureAngles, parseCustomerPromptToSpecs } from '../../services/coutureVisualEngine';
+import {
+  buildPhotographicPrompts,
+  detectPromptContradictions,
+  resolveDressSpecifications
+} from '../../services/promptSpecResolver';
 
 interface AIDressGeneratorProps {
   onDesignGenerated: (design: DressDesign) => void;
@@ -30,11 +38,18 @@ interface AIDressGeneratorProps {
   onOpenFabricLibrary?: () => void;
 }
 
+interface GenerationErrorState {
+  message: string;
+  code?: string;
+  retryable: boolean;
+  clarificationNeeded?: boolean;
+  conflicts?: string[];
+}
+
 export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   onDesignGenerated,
   onOpenNotifications,
   onOpenHistory,
-  onRequestTailor,
   onViewDesignDetails,
   initialPrompt,
   initialDressType,
@@ -43,443 +58,445 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   onGenderChange,
   onOpenFabricLibrary
 }) => {
-  // Primary Attributes State
+  // Form Selections (used ONLY for details not explicitly specified in the user's prompt)
   const [dressType, setDressType] = useState<string>(
     initialDressType || (gender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Gown')
   );
   const [occasion, setOccasion] = useState<string>(
-    gender === 'men' ? 'Groom & Royal Baraat' : 'Bridal'
+    gender === 'men' ? 'Groom & Royal Baraat' : 'Bridal & Evening Reception'
   );
   const [fabric, setFabric] = useState<string>(
     gender === 'men' ? 'Pure Banarasi Raw Silk' : 'Silk Organza'
   );
   const [color, setColor] = useState<string>(
-    gender === 'men' ? 'Kashi Midnight Obsidian' : 'Pearl blush'
+    gender === 'men' ? 'Midnight Obsidian' : 'Blush Pink'
   );
-  
-  // Secondary Attributes in "More Options"
   const [sleeves, setSleeves] = useState<string>(
-    gender === 'men' ? 'French Tailored Cuffs' : 'Long sheer'
+    gender === 'men' ? 'Full-Length Tailored Sleeves' : 'Full Sleeves'
   );
   const [neckStyle, setNeckStyle] = useState<string>(
-    gender === 'men' ? 'Mandarin Bandhgala Collar' : 'Sweetheart'
+    gender === 'men' ? 'Mandarin Collar' : 'Sweetheart Neckline'
   );
+
   const [showMoreOptions, setShowMoreOptions] = useState<boolean>(false);
+  const [showPromptInspector, setShowPromptInspector] = useState<boolean>(false);
   const [previewAngle, setPreviewAngle] = useState<'front' | 'back' | 'side' | 'detail'>('front');
 
-  // Upload States
+  // Optional User Reference Uploads (Raster only)
   const [sketchFile, setSketchFile] = useState<string | null>(null);
   const [inspirationFile, setInspirationFile] = useState<string | null>(null);
   const sketchInputRef = useRef<HTMLInputElement>(null);
   const inspirationInputRef = useRef<HTMLInputElement>(null);
 
-  // Active Dropdown
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-  // Prompt state
-  const defaultPrompt = gender === 'men'
-    ? 'Midnight obsidian raw silk Bandhgala jacket with antique gold zardozi collar embroidery, brass lion-crest buttons, and tailored jodhpur breeches'
-    : 'Pastel silk organza gown with hand-finished pearl constellation and fluid train';
+  const defaultPrompt =
+    gender === 'men'
+      ? 'A midnight-black raw silk Jodhpuri Bandhgala suit with a mandarin collar, full-length tailored sleeves, and subtle antique gold embroidery only on the collar. No brooch, no pocket square, neutral studio background.'
+      : 'A blush-pink organza floor-length gown with a sweetheart neckline, full sleeves, fitted waist, and small pearl embellishments. No necklace or belt. Neutral studio background.';
 
   const [prompt, setPrompt] = useState<string>(initialPrompt || defaultPrompt);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState<boolean>(false);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [generationStage, setGenerationStage] = useState<number>(0);
+  const [generationError, setGenerationError] = useState<GenerationErrorState | null>(null);
+  const [lastGeneratedDesign, setLastGeneratedDesign] = useState<DressDesign | null>(null);
 
-  // Parse customer prompt in real time so any silhouette, color, fabric, neckline, sleeve, or embroidery written in the prompt takes priority
-  const parsedFromPrompt = React.useMemo(() => {
-    return parseCustomerPromptToSpecs(prompt, {
+  // Check if latestConcept has non-SVG raster images from a previous real generation
+  const activePhotographicDesign = React.useMemo(() => {
+    if (lastGeneratedDesign) return lastGeneratedDesign;
+    const candidate = latestConcept;
+    const frontUrl = candidate?.variations?.[0]?.frontImageUrl || '';
+    if (frontUrl && frontUrl.startsWith('data:image/') && !frontUrl.startsWith('data:image/svg')) {
+      return candidate || null;
+    }
+    return null;
+  }, [lastGeneratedDesign, latestConcept]);
+
+  // Real-time contradiction detection on user's explicit prompt
+  const contradictionCheck = React.useMemo(() => {
+    return detectPromptContradictions(prompt);
+  }, [prompt]);
+
+  // Resolve specifications with strict user prompt priority over form defaults
+  const resolvedSpec = React.useMemo(() => {
+    return resolveDressSpecifications(prompt, {
       gender,
       dressType,
-      color,
+      occasion,
       fabric,
-      neckline: neckStyle,
+      color,
       sleeve: sleeves,
-      pattern: gender === 'men' ? 'Hand Zardozi & Dabka Gold' : 'Pearl & Kundan Beadwork'
+      neckline: neckStyle
     });
-  }, [prompt, gender, dressType, color, fabric, neckStyle, sleeves]);
+  }, [prompt, gender, dressType, occasion, fabric, color, sleeves, neckStyle]);
 
-  // Synchronize studio attribute pills as the customer types a custom prompt
+  const builtPhotographicPrompts = React.useMemo(() => {
+    return buildPhotographicPrompts(resolvedSpec);
+  }, [resolvedSpec]);
+
   const handlePromptChange = (newPromptText: string) => {
     setPrompt(newPromptText);
-    if (newPromptText.trim().length > 2) {
-      const extracted = parseCustomerPromptToSpecs(newPromptText, {
-        gender,
-        dressType,
-        color,
-        fabric,
-        neckline: neckStyle,
-        sleeve: sleeves
-      });
-      if (extracted.dressType && extracted.dressType !== dressType) setDressType(extracted.dressType);
-      if (extracted.color && extracted.color !== color) setColor(extracted.color);
-      if (extracted.fabric && extracted.fabric !== fabric) setFabric(extracted.fabric);
-      if (extracted.neckline && extracted.neckline !== neckStyle) setNeckStyle(extracted.neckline);
-      if (extracted.sleeve && extracted.sleeve !== sleeves) setSleeves(extracted.sleeve);
+    if (generationError) {
+      setGenerationError(null);
     }
   };
 
-  // Structured Prompt Builder State: injects dress-type-specific style keywords ('couture', 'high-fashion', 'macro-detail', etc.)
-  const DRESS_TYPE_STYLE_KEYWORDS: Record<string, string[]> = React.useMemo(() => ({
-    // Women's Couture Dress Types
-    'Gown': ['couture', 'high-fashion', 'macro-detail', 'floor-sweeping train', 'sculpted boned bodice', 'French bias drape', 'editorial runway lighting'],
-    'Lehenga': ['couture', 'high-fashion', 'macro-detail', '16-kali royal flare', '24K zardozi border', 'sculpted choli', 'scalloped organza dupatta'],
-    'Anarkali': ['couture', 'high-fashion', 'macro-detail', 'floor-grazing kalidar panels', 'Mughal jari work', 'architectural ghera', 'hand-knotted tassels'],
-    'Saree Gown': ['couture', 'high-fashion', 'macro-detail', 'pre-pleated pallu drape', 'structured corset blouse', 'metallic kasab border', 'sculptural silhouette'],
-    'Drape Saree': ['couture', 'high-fashion', 'macro-detail', 'handwoven zari pallu', 'pleated patli drape', 'sculpted choli blouse', 'temple border'],
-    'Mermaid Gown': ['couture', 'high-fashion', 'macro-detail', 'sculpted trumpet flare', 'contoured fishtail hem', 'boned corset bodice', 'editorial runway lighting'],
-    'Ball Gown': ['couture', 'high-fashion', 'macro-detail', 'cathedral crinoline dome skirt', 'cinched corset waist', 'royal train', 'atelier stitch precision'],
-    'Corset Dress': ['couture', 'high-fashion', 'macro-detail', 'spiral steel boning', 'contoured bustier', 'draped silk overskirt', 'atelier stitch precision'],
-    'Empire Silhouette': ['couture', 'high-fashion', 'macro-detail', 'raised empire waistline', 'elongated columnar fall', 'pearl constellation applique', 'fluid chiffon train'],
-    // Men's Bespoke Dress Types
-    'Royal Jodhpuri Bandhgala': ['couture', 'high-fashion', 'macro-detail', 'stiffened mandarin collar', 'hand-padded roped shoulders', 'heritage horn buttons', 'bespoke equestrian cut'],
-    'Savile Row 3-Piece Tuxedo': ['couture', 'high-fashion', 'macro-detail', 'floating horsehair canvas', 'satin-faced peak lapels', 'hand-felled barchetta pocket', 'razor-sharp bespoke drape'],
-    'Imperial Awadh Sherwani': ['couture', 'high-fashion', 'macro-detail', '24K gold dabka zardozi', 'flared angarkha ghera', 'handloom Banarasi brocade', 'royal kantha stole'],
-    'Bespoke Nehru Jacket & Kurta': ['couture', 'high-fashion', 'macro-detail', 'sculpted bandi silhouette', 'precision welt pocket', 'pintuck silk kurta', 'mother-of-pearl buttons'],
-    'Italian Double-Breasted Blazer': ['couture', 'high-fashion', 'macro-detail', '6x2 double-breasted stance', 'wide Milanese peak lapel', 'AMF pick-stitched seams', 'Neapolitan shoulder'],
-    'Designer Indo-Western Achkan': ['couture', 'high-fashion', 'macro-detail', 'asymmetrical overlap closure', 'architectural draped placket', 'tonal metallic resham', 'structured bespoke hemline'],
-    'Luxury Linen Safari Suit': ['couture', 'high-fashion', 'macro-detail', 'bellows box-pleated pockets', 'belted Norfolk waist', 'Belgian linen weave', 'epaulette shoulder tailoring']
-  }), []);
-
-  const currentDressKeywords = React.useMemo(() => {
-    return DRESS_TYPE_STYLE_KEYWORDS[parsedFromPrompt.dressType] || DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring', 'artisan handwork'];
-  }, [DRESS_TYPE_STYLE_KEYWORDS, parsedFromPrompt.dressType, dressType]);
-
-  const [selectedStyleKeywords, setSelectedStyleKeywords] = useState<string[]>(currentDressKeywords);
-  const [autoInjectKeywords, setAutoInjectKeywords] = useState<boolean>(true);
-  const [showStructuredBuilder, setShowStructuredBuilder] = useState<boolean>(true);
-
-  // Sync active style keywords whenever dressType changes
-  useEffect(() => {
-    setSelectedStyleKeywords(DRESS_TYPE_STYLE_KEYWORDS[parsedFromPrompt.dressType] || DRESS_TYPE_STYLE_KEYWORDS[dressType] || ['couture', 'high-fashion', 'macro-detail', 'bespoke tailoring']);
-  }, [parsedFromPrompt.dressType, dressType, DRESS_TYPE_STYLE_KEYWORDS]);
-
-  // Build structured prompt that respects the customer's prompt-derived attributes
-  const compiledStructuredPrompt = React.useMemo(() => {
-    const effectiveDress = parsedFromPrompt.dressType || dressType;
-    const effectiveFabric = parsedFromPrompt.fabric || fabric;
-    const effectiveColor = parsedFromPrompt.color || color;
-    const effectiveNeck = parsedFromPrompt.neckline || neckStyle;
-    const effectiveSleeve = parsedFromPrompt.sleeve || sleeves;
-
-    const baseVision = prompt.trim() || `${effectiveColor} ${effectiveFabric} ${effectiveDress}`;
-    const activeTags = selectedStyleKeywords.length > 0
-      ? selectedStyleKeywords
-      : ['couture', 'high-fashion', 'macro-detail'];
-
-    const mergedKeywords = autoInjectKeywords
-      ? Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...activeTags]))
-      : activeTags;
-
-    const specsSegment = `[Silhouette: ${effectiveDress} | Fabric: ${effectiveFabric} | Palette: ${effectiveColor} | Neckline/Collar: ${effectiveNeck} | Sleeve: ${effectiveSleeve} | Occasion: ${occasion}]`;
-    const keywordsSegment = mergedKeywords.length > 0
-      ? `[Style Keywords: ${mergedKeywords.join(', ')}]`
-      : '';
-
-    return `${baseVision} ${specsSegment} ${keywordsSegment}`.trim();
-  }, [prompt, parsedFromPrompt, dressType, fabric, color, neckStyle, sleeves, occasion, selectedStyleKeywords, autoInjectKeywords]);
-
-  const toggleStyleKeyword = (kw: string) => {
-    setSelectedStyleKeywords((prev) =>
-      prev.includes(kw) ? prev.filter((item) => item !== kw) : [...prev, kw]
-    );
-  };
-
-  const handleApplyStructuredToPrompt = () => {
-    const topKeywords = Array.from(new Set(['couture', 'high-fashion', 'macro-detail', ...selectedStyleKeywords])).slice(0, 6);
-    const enriched = `${parsedFromPrompt.color || color} ${parsedFromPrompt.fabric || fabric} ${parsedFromPrompt.dressType || dressType} with ${(parsedFromPrompt.neckline || neckStyle).toLowerCase()} and ${(parsedFromPrompt.sleeve || sleeves).toLowerCase()} for ${occasion.toLowerCase()} — ${topKeywords.join(', ')}`;
-    setPrompt(enriched.slice(0, 300));
-  };
-
-  // Update defaults when gender changes
+  // Update defaults when gender switches (if no custom initialPrompt was passed)
   useEffect(() => {
     if (!initialPrompt) {
       if (gender === 'men') {
         setDressType('Royal Jodhpuri Bandhgala');
         setOccasion('Groom & Royal Baraat');
         setFabric('Pure Banarasi Raw Silk');
-        setColor('Kashi Midnight Obsidian');
-        setSleeves('French Tailored Cuffs');
-        setNeckStyle('Mandarin Bandhgala Collar');
-        setPrompt('Midnight obsidian raw silk Bandhgala jacket with antique gold zardozi collar embroidery, brass lion-crest buttons, and tailored jodhpur breeches');
+        setColor('Midnight Obsidian');
+        setSleeves('Full-Length Tailored Sleeves');
+        setNeckStyle('Mandarin Collar');
+        setPrompt(
+          'A midnight-black raw silk Jodhpuri Bandhgala suit with a mandarin collar, full-length tailored sleeves, and subtle antique gold embroidery only on the collar. No brooch, no pocket square, neutral studio background.'
+        );
       } else {
         setDressType('Gown');
-        setOccasion('Bridal');
+        setOccasion('Bridal & Evening Reception');
         setFabric('Silk Organza');
-        setColor('Pearl blush');
-        setSleeves('Long sheer');
-        setNeckStyle('Sweetheart');
-        setPrompt('Pastel silk organza gown with hand-finished pearl constellation and fluid train');
+        setColor('Blush Pink');
+        setSleeves('Full Sleeves');
+        setNeckStyle('Sweetheart Neckline');
+        setPrompt(
+          'A blush-pink organza floor-length gown with a sweetheart neckline, full sleeves, fitted waist, and small pearl embellishments. No necklace or belt. Neutral studio background.'
+        );
       }
+      setGenerationError(null);
     }
   }, [gender, initialPrompt]);
 
-  // Options for Dropdowns - Gender Adaptive
   const optionsMap: Record<string, string[]> = {
-    dressType: gender === 'men' 
-      ? ['Royal Jodhpuri Bandhgala', 'Savile Row 3-Piece Tuxedo', 'Imperial Awadh Sherwani', 'Bespoke Nehru Jacket & Kurta', 'Italian Double-Breasted Blazer', 'Designer Indo-Western Achkan', 'Luxury Linen Safari Suit']
-      : ['Gown', 'Lehenga', 'Anarkali', 'Saree Gown', 'Drape Saree', 'Mermaid Gown', 'Ball Gown', 'Corset Dress', 'Empire Silhouette'],
-    occasion: gender === 'men'
-      ? ['Groom & Royal Baraat', 'Black Tie Gala & Red Carpet', 'Sangeet & Cocktail Night', 'Festive Puja & Diwali', 'Diplomatic & Corporate Luxury']
-      : ['Bridal', 'Evening Reception', 'Cocktail', 'Festive', 'Red Carpet Gala'],
-    fabric: gender === 'men'
-      ? ['Pure Banarasi Raw Silk', 'Italian Super 150s Merino Wool', 'Dense Silk Velvet', 'Irish Herringbone Linen', 'Egyptian Giza Cotton', 'Cashmere Tweed Blend']
-      : PREDEFINED_FABRICS.map((f) => f.name),
-    color: gender === 'men'
-      ? ['Kashi Midnight Obsidian', 'Bordeaux Wine Velvet', 'Imperial Emerald', 'Antique Gold & Ivory', 'Charcoal Slate', 'Morpankhi Peacock Blue']
-      : ['Pearl blush', 'Ivory white', 'Midnight navy', 'Rani pink', 'Sage green', 'Antique gold', 'Emerald Green', 'Ruby Crimson'],
-    sleeves: gender === 'men'
-      ? ['French Tailored Cuffs', 'AMF Pick-Stitched 4-Button Cuff', 'Churidar Gathered Sleeves', 'Full Length Fitted Cuffs']
-      : ['Long sheer', 'Cap sleeves', 'Elbow-length', 'Sleeveless', 'Flute sleeves', 'Sheer cape'],
-    neckStyle: gender === 'men'
-      ? ['Mandarin Bandhgala Collar', 'Satin Silk Peak Lapel', 'Classic British Notch Lapel', 'Silk Shawl Tuxedo Collar', 'Nehru Stand Collar', 'Angrakha Overlap Collar']
-      : ['Sweetheart', 'Sculpted V-Neck', 'Square Cut', 'Boat neck', 'Halter', 'Illusion collar']
+    dressType:
+      gender === 'men'
+        ? [
+            'Royal Jodhpuri Bandhgala',
+            'Savile Row 3-Piece Tuxedo',
+            'Imperial Awadh Sherwani',
+            'Bespoke Nehru Jacket & Kurta',
+            'Italian Double-Breasted Blazer',
+            'Luxury Linen Safari Suit'
+          ]
+        : [
+            'Gown',
+            'Mermaid Gown',
+            'Lehenga Choli',
+            'Anarkali Gown',
+            'Saree Gown',
+            'Saree with Fitted Blouse',
+            'Ball Gown',
+            'Corset Gown',
+            'Cocktail Dress'
+          ],
+    occasion:
+      gender === 'men'
+        ? [
+            'Groom & Royal Baraat',
+            'Black Tie Gala & Red Carpet',
+            'Sangeet & Cocktail Night',
+            'Festive Celebration',
+            'Formal Reception'
+          ]
+        : ['Bridal & Evening Reception', 'Evening Gala', 'Cocktail', 'Festive', 'Red Carpet'],
+    fabric:
+      gender === 'men'
+        ? [
+            'Pure Banarasi Raw Silk',
+            'Italian Super 150s Merino Wool',
+            'Silk Velvet',
+            'Irish Herringbone Linen',
+            'Egyptian Giza Cotton',
+            'Mulberry Silk'
+          ]
+        : PREDEFINED_FABRICS.map((f) => f.name),
+    color:
+      gender === 'men'
+        ? [
+            'Midnight Obsidian',
+            'Bordeaux Wine',
+            'Emerald Green',
+            'Ivory White',
+            'Charcoal Slate',
+            'Royal Blue'
+          ]
+        : [
+            'Blush Pink',
+            'Emerald Green',
+            'Ivory White',
+            'Midnight Navy',
+            'Rani Pink',
+            'Sage Green',
+            'Champagne Gold',
+            'Crimson Red'
+          ],
+    sleeves:
+      gender === 'men'
+        ? [
+            'Full-Length Tailored Sleeves',
+            'French Tailored Cuffs',
+            'Churidar Gathered Sleeves'
+          ]
+        : [
+            'Full Sleeves',
+            'Full-Length Sheer Sleeves',
+            'Cap Sleeves',
+            'Three-Quarter Sleeves',
+            'Sleeveless',
+            'Bell Sleeves'
+          ],
+    neckStyle:
+      gender === 'men'
+        ? [
+            'Mandarin Collar',
+            'Satin Peak Lapels',
+            'Classic Notch Lapels',
+            'Silk Shawl Collar',
+            'Nehru Stand Collar'
+          ]
+        : [
+            'Sweetheart Neckline',
+            'Deep V-Neck',
+            'Square Neckline',
+            'Boat Neckline',
+            'Halter Neckline',
+            'Off-Shoulder Neckline',
+            'High Neckline'
+          ]
   };
 
-  // Quick Prompt Chips with auto-synchronized attributes so preview updates immediately
-  const promptSuggestions = gender === 'men'
-    ? [
-        { label: 'Royal Bandhgala', dressType: 'Royal Jodhpuri Bandhgala', color: 'Kashi Midnight Obsidian', fabric: 'Pure Banarasi Raw Silk', text: 'Royal midnight raw silk Bandhgala with gold dabka collar embroidery and lion buttons' },
-        { label: 'Savile Row Tuxedo', dressType: 'Savile Row 3-Piece Tuxedo', color: 'Bordeaux Wine Velvet', fabric: 'Dense Silk Velvet', text: 'Savile Row 3-piece tuxedo in deep Bordeaux wine velvet with Duchess satin peak lapels' },
-        { label: 'Imperial Sherwani', dressType: 'Imperial Awadh Sherwani', color: 'Antique Gold & Ivory', fabric: 'Pure Banarasi Raw Silk', text: 'Ivory mulberry silk sherwani with fine hand-worked Lucknowi Chikankari resham embroidery' },
-        { label: 'Nehru Jacket Set', dressType: 'Bespoke Nehru Jacket & Kurta', color: 'Imperial Emerald', fabric: 'Pure Banarasi Raw Silk', text: 'Imperial emerald Banarasi brocade Nehru jacket over Egyptian cotton kurta and churidar' }
-      ]
-    : [
-        { label: 'Pearl Blush Gown', dressType: 'Gown', color: 'Pearl blush', fabric: 'Silk Organza', text: 'Pastel silk organza gown with hand-finished pearl constellation and fluid train' },
-        { label: 'Bridal Lehenga', dressType: 'Lehenga', color: 'Rani pink', fabric: 'Pure Banarasi Silk', text: 'Rani pink pure raw silk bridal lehenga with heavy 24K gold dabka and zardozi' },
-        { label: 'Silk Anarkali', dressType: 'Anarkali', color: 'Ivory white', fabric: 'Chanderi Tissue', text: 'Moonlight ivory georgette Anarkali with intricate shadow work and scalloped organza dupatta' },
-        { label: 'Saree Gown', dressType: 'Saree Gown', color: 'Antique gold', fabric: 'Kanjeevaram Zari Silk', text: 'Antique gold pre-pleated Kanjeevaram silk saree gown with Maggam work designer blouse' }
-      ];
+  const promptSuggestions =
+    gender === 'men'
+      ? [
+          {
+            label: 'Obsidian Bandhgala',
+            dressType: 'Royal Jodhpuri Bandhgala',
+            color: 'Midnight Obsidian',
+            fabric: 'Pure Banarasi Raw Silk',
+            text: 'A midnight-black raw silk Jodhpuri Bandhgala suit with a mandarin collar, full-length tailored sleeves, and subtle antique gold embroidery only on the collar. No brooch, no pocket square, neutral studio background.'
+          },
+          {
+            label: 'Bordeaux Velvet Tuxedo',
+            dressType: 'Savile Row 3-Piece Tuxedo',
+            color: 'Bordeaux Wine',
+            fabric: 'Silk Velvet',
+            text: 'A deep bordeaux-wine velvet 3-piece tuxedo with satin peak lapels, full-length tailored sleeves, and fitted waist. No brooch, plain white studio background.'
+          },
+          {
+            label: 'Ivory Chikankari Sherwani',
+            dressType: 'Imperial Awadh Sherwani',
+            color: 'Ivory White',
+            fabric: 'Mulberry Silk',
+            text: 'An ivory-white mulberry silk floor-length sherwani with a mandarin collar, full sleeves, and fine tonal chikankari embroidery. No necklace, no stole, neutral studio background.'
+          }
+        ]
+      : [
+          {
+            label: 'Blush Pink Organza Gown',
+            dressType: 'Gown',
+            color: 'Blush Pink',
+            fabric: 'Silk Organza',
+            text: 'A blush-pink organza floor-length gown with a sweetheart neckline, full sleeves, fitted waist, and small pearl embellishments. No necklace or belt. Neutral studio background.'
+          },
+          {
+            label: 'Emerald Velvet Mermaid Gown',
+            dressType: 'Mermaid Gown',
+            color: 'Emerald Green',
+            fabric: 'Silk Velvet',
+            text: 'An emerald-green velvet floor-length mermaid gown with a sweetheart neckline, full-length sheer sleeves, and gold floral embroidery only along the hem. No necklace, no belt, plain white studio background.'
+          },
+          {
+            label: 'Rani Pink Bridal Lehenga',
+            dressType: 'Lehenga Choli',
+            color: 'Rani Pink',
+            fabric: 'Pure Banarasi Silk',
+            text: 'A rani-pink Banarasi silk floor-length lehenga choli with a square neckline, three-quarter sleeves, fitted waist, and gold zardozi floral embroidery. No necklace, no belt, neutral studio background.'
+          }
+        ];
 
-  // Dynamically generate 4-angle cohesive renders strictly honoring the customer's prompt first
-  const liveAngles = React.useMemo(() => {
-    return generateCohesiveCoutureAngles({
-      gender: parsedFromPrompt.gender,
-      dressType: parsedFromPrompt.dressType,
-      color: parsedFromPrompt.color,
-      fabric: parsedFromPrompt.fabric,
-      neckline: parsedFromPrompt.neckline,
-      sleeve: parsedFromPrompt.sleeve,
-      pattern: parsedFromPrompt.pattern,
-      title: parsedFromPrompt.title,
-      prompt: prompt.trim() || compiledStructuredPrompt
-    });
-  }, [parsedFromPrompt, prompt, compiledStructuredPrompt]);
+  const handleEnhancePromptClarity = async () => {
+    if (isEnhancingPrompt || isGenerating) return;
+    if (contradictionCheck.hasContradictions) {
+      setGenerationError({
+        message: contradictionCheck.conflicts.join(' '),
+        code: 'PROMPT_CONTRADICTION',
+        retryable: false,
+        clarificationNeeded: true,
+        conflicts: contradictionCheck.conflicts
+      });
+      return;
+    }
 
-  const activeConcept: DressDesign = React.useMemo(() => ({
-    id: `design-${parsedFromPrompt.gender}-${parsedFromPrompt.dressType.toLowerCase().replace(/\s+/g, '-')}`,
-    customerId: 'cust-1',
-    customerName: 'Ananya Verma',
-    title: parsedFromPrompt.title,
-    prompt: prompt.trim() || compiledStructuredPrompt,
-    createdAt: new Date().toISOString(),
-    isFavorite: true,
-    selectedVariationIndex: 0,
-    tags: [
-      parsedFromPrompt.gender === 'men' ? 'Menswear' : 'Womenswear',
-      parsedFromPrompt.dressType,
-      parsedFromPrompt.color,
-      parsedFromPrompt.fabric,
-      occasion,
-      ...selectedStyleKeywords.slice(0, 3)
-    ],
-    variations: [
-      {
-        id: `var-live-${parsedFromPrompt.gender}`,
-        name: parsedFromPrompt.title,
-        tagline: prompt.trim()
-          ? `Custom AI design generated from prompt: "${prompt.trim().slice(0, 120)}"`
-          : `Bespoke ${parsedFromPrompt.dressType.toLowerCase()} in ${parsedFromPrompt.fabric.toLowerCase()} with ${parsedFromPrompt.neckline.toLowerCase()} and ${parsedFromPrompt.sleeve.toLowerCase()} for ${occasion.toLowerCase()}.`,
-        frontImageUrl: liveAngles.front,
-        backImageUrl: liveAngles.back,
-        sideImageUrl: liveAngles.side,
-        detailImageUrl: liveAngles.detail,
-        fabricDetails: {
-          primary: `${parsedFromPrompt.fabric} (Master Loom)`,
-          lining: parsedFromPrompt.gender === 'men' ? 'Cupro Breathable Anti-Static Lining' : 'Breathable Silk Crepe & Mulmul',
-          embellishments: parsedFromPrompt.pattern,
-          estimatedYards: parsedFromPrompt.gender === 'men' ? 5.5 : 7.5,
-          recommendedWeightGsm: parsedFromPrompt.gender === 'men' ? 340 : 180
-        },
-        tailorNotes: parsedFromPrompt.gender === 'men'
-          ? [
-              'Hand-basted full horsehair canvas chest piece for lasting sculptural drape.',
-              `${parsedFromPrompt.neckline} reinforced with Japanese collar canvas for upright regal posture.`,
-              'Twin side vents with 2-inch interior seam allowance on chest and waist.',
-              `${parsedFromPrompt.sleeve} with functional horn buttons and hand-sewn buttonholes.`
-            ]
-          : [
-              `Hand-finished ${parsedFromPrompt.pattern.toLowerCase()} across ${parsedFromPrompt.neckline.toLowerCase()} bodice and ${parsedFromPrompt.sleeve.toLowerCase()}.`,
-              'Sculpted inner bodice with invisible boning structure and 2.5-inch margin.',
-              'Fluid skirt sweep with horsehair braid hem for structured movement.',
-              'Concealed back closure with silk loop micro-buttons.'
-            ],
-        stylingTips: parsedFromPrompt.gender === 'men'
-          ? [
-              'Pair with an antique pocket square, uncut emerald brooch, and velvet juttis.',
-              `Ideal for ${occasion.toLowerCase()} and formal evening ceremonies.`
-            ]
-          : [
-              'Pair with teardrop pearl earrings and a delicate polki choker.',
-              `Tailored specifically for ${occasion.toLowerCase()} entrances.`
-            ],
-        colorPsychology: `${parsedFromPrompt.color} radiates sovereign poise, serenity, and timeless couture elegance.`,
-        estimatedCraftTimeDays: 14,
-        estimatedPriceRange: { min: parsedFromPrompt.gender === 'men' ? 28000 : 24000, max: parsedFromPrompt.gender === 'men' ? 46000 : 42000, currency: 'INR' },
-        specs: {
-          dressType: parsedFromPrompt.dressType as any,
-          occasion: occasion as any,
-          fabric: parsedFromPrompt.fabric as any,
-          color: parsedFromPrompt.color,
-          sleeve: parsedFromPrompt.sleeve as any,
-          neckline: parsedFromPrompt.neckline as any,
-          pattern: parsedFromPrompt.pattern as any
-        }
+    setIsEnhancingPrompt(true);
+    setGenerationError(null);
+    try {
+      const res = await fetch('/api/gemini/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          gender,
+          dressType,
+          occasion,
+          fabric,
+          color,
+          neckline: neckStyle,
+          sleeve: sleeves
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGenerationError({
+          message: data?.error || 'Could not enhance prompt.',
+          code: data?.code,
+          retryable: Boolean(data?.retryable),
+          clarificationNeeded: Boolean(data?.clarificationNeeded),
+          conflicts: data?.conflicts
+        });
+      } else if (data?.enhancedPrompt) {
+        setPrompt(data.enhancedPrompt);
       }
-    ]
-  }), [parsedFromPrompt, occasion, prompt, compiledStructuredPrompt, liveAngles, selectedStyleKeywords]);
+    } catch (err: any) {
+      setGenerationError({
+        message: err?.message || 'Unable to connect to prompt enhancement service.',
+        code: 'NETWORK_ERROR',
+        retryable: true
+      });
+    } finally {
+      setIsEnhancingPrompt(false);
+    }
+  };
 
   const handleGenerate = async () => {
+    // Prevent duplicate submissions
+    if (isGenerating) return;
+
+    // 1. Validate prompt is non-empty
+    if (!prompt.trim()) {
+      setGenerationError({
+        message: 'Please enter a dress description in the prompt box before generating.',
+        code: 'EMPTY_PROMPT',
+        retryable: false
+      });
+      return;
+    }
+
+    // 2. Check for contradictory user requirements and ask for clarification before generating
+    if (contradictionCheck.hasContradictions) {
+      setGenerationError({
+        message:
+          'Your prompt contains contradictory design requirements. Please clarify the conflicting details below before generating.',
+        code: 'PROMPT_CONTRADICTION',
+        retryable: false,
+        clarificationNeeded: true,
+        conflicts: contradictionCheck.conflicts
+      });
+      return;
+    }
+
     setIsGenerating(true);
+    setGenerationError(null);
     setGenerationStage(1);
-    setGenerationNotice(`Analyzing customer prompt & extracting '${parsedFromPrompt.dressType}' visual specs...`);
+    setGenerationNotice(
+      `Step 1/3: Resolving "${resolvedSpec.color} ${resolvedSpec.fabric} ${resolvedSpec.garmentType}" & exclusions...`
+    );
 
     const stageTimer1 = setTimeout(() => {
       setGenerationStage(2);
-      setGenerationNotice(`Synthesizing ${parsedFromPrompt.color} ${parsedFromPrompt.dressType} 4-angle silhouette...`);
-    }, 380);
+      setGenerationNotice(
+        `Step 2/3: Photographing full-length front view of ${resolvedSpec.color} ${resolvedSpec.garmentType}...`
+      );
+    }, 1800);
 
     const stageTimer2 = setTimeout(() => {
       setGenerationStage(3);
-      setGenerationNotice('Rendering macro-detail embroidery weave & spec sheet...');
-    }, 760);
-
-    const minDelayPromise = new Promise((resolve) => setTimeout(resolve, 1100));
+      setGenerationNotice(
+        'Step 3/3: Generating reference-conditioned back, side & macro fabric detail views...'
+      );
+    }, 4500);
 
     try {
-      const [res] = await Promise.all([
-        fetch('/api/gemini/generate-dress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            gender: parsedFromPrompt.gender,
-            dressType: parsedFromPrompt.dressType,
-            occasion,
-            fabric: parsedFromPrompt.fabric,
-            color: parsedFromPrompt.color,
-            sleeve: parsedFromPrompt.sleeve,
-            neckline: parsedFromPrompt.neckline,
-            prompt: prompt.trim() || compiledStructuredPrompt,
-            styleKeywords: selectedStyleKeywords,
-            pattern: parsedFromPrompt.pattern,
-            budget: parsedFromPrompt.gender === 'men' ? '₹38,000' : '₹35,000'
-          })
-        }),
-        minDelayPromise
-      ]);
+      const res = await fetch('/api/gemini/generate-dress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gender: resolvedSpec.gender,
+          dressType,
+          occasion,
+          fabric,
+          color,
+          sleeve: sleeves,
+          neckline: neckStyle,
+          prompt: prompt.trim(),
+          sketchImage: sketchFile,
+          inspirationImage: inspirationFile,
+          budget: resolvedSpec.gender === 'men' ? '₹38,000' : '₹35,000'
+        })
+      });
 
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.variations && data.variations.length > 0) {
-          setIsGenerating(false);
-          setGenerationStage(0);
-          setGenerationNotice(null);
-          onDesignGenerated(data);
-          return;
-        }
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setGenerationError({
+          message:
+            data?.error ||
+            `Image generation failed (HTTP ${res.status}). Please verify GEMINI_API_KEY and retry.`,
+          code: data?.code || `HTTP_${res.status}`,
+          retryable: data?.retryable !== false,
+          clarificationNeeded: Boolean(data?.clarificationNeeded),
+          conflicts: Array.isArray(data?.conflicts) ? data.conflicts : []
+        });
+        setIsGenerating(false);
+        setGenerationStage(0);
+        setGenerationNotice(null);
+        return;
       }
-    } catch (err) {
+
+      const firstVar = data?.variations?.[0];
+      const hasValidRasterFront =
+        firstVar?.frontImageUrl &&
+        typeof firstVar.frontImageUrl === 'string' &&
+        !firstVar.frontImageUrl.startsWith('data:image/svg');
+
+      if (!data || !firstVar || !hasValidRasterFront) {
+        setGenerationError({
+          message:
+            'The image generation API response did not contain a valid raster photograph. Please retry generation.',
+          code: 'NO_IMAGE_GENERATED',
+          retryable: true
+        });
+        setIsGenerating(false);
+        setGenerationStage(0);
+        setGenerationNotice(null);
+        return;
+      }
+
+      setLastGeneratedDesign(data);
+      setIsGenerating(false);
+      setGenerationStage(0);
+      setGenerationNotice(null);
+      onDesignGenerated(data);
+    } catch (err: any) {
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
-      console.warn('Backend generation notice, falling back to prompt-parsed concept:', err);
+      setIsGenerating(false);
+      setGenerationStage(0);
+      setGenerationNotice(null);
+      setGenerationError({
+        message:
+          err?.message ||
+          'Network error while communicating with the photorealistic image generation server. Please retry.',
+        code: 'NETWORK_ERROR',
+        retryable: true
+      });
     }
-
-    setIsGenerating(false);
-    setGenerationStage(0);
-    setGenerationNotice(null);
-
-    const assets = generateCohesiveCoutureAngles({
-      gender: parsedFromPrompt.gender,
-      dressType: parsedFromPrompt.dressType,
-      color: parsedFromPrompt.color,
-      fabric: parsedFromPrompt.fabric,
-      neckline: parsedFromPrompt.neckline,
-      sleeve: parsedFromPrompt.sleeve,
-      pattern: parsedFromPrompt.pattern,
-      title: parsedFromPrompt.title,
-      prompt: prompt.trim() || compiledStructuredPrompt
-    });
-
-    const generatedDesign: DressDesign = {
-      id: `design-${Date.now()}`,
-      customerId: 'cust-1',
-      customerName: 'Ananya Verma',
-      title: parsedFromPrompt.title,
-      prompt: prompt.trim() || compiledStructuredPrompt,
-      createdAt: new Date().toISOString(),
-      isFavorite: true,
-      selectedVariationIndex: 0,
-      tags: [
-        parsedFromPrompt.gender === 'men' ? 'Menswear' : 'Womenswear',
-        parsedFromPrompt.dressType,
-        parsedFromPrompt.color,
-        parsedFromPrompt.fabric,
-        'AI Bespoke',
-        ...selectedStyleKeywords.slice(0, 3)
-      ],
-      variations: [
-        {
-          id: `var-${Date.now()}`,
-          name: parsedFromPrompt.title,
-          tagline: prompt.trim()
-            ? `Custom AI design generated from prompt: "${prompt.trim().slice(0, 140)}"`
-            : `Bespoke master tailor crafted ${parsedFromPrompt.dressType.toLowerCase()} in ${parsedFromPrompt.fabric.toLowerCase()} for ${occasion.toLowerCase()}.`,
-          frontImageUrl: assets.front,
-          backImageUrl: assets.back,
-          sideImageUrl: assets.side,
-          detailImageUrl: assets.detail,
-          fabricDetails: {
-            primary: `${parsedFromPrompt.fabric} (Master Handloom)`,
-            lining: parsedFromPrompt.gender === 'men' ? 'Cupro Anti-Static Bemberg' : 'Breathable Mulberry Mulmul',
-            embellishments: parsedFromPrompt.pattern,
-            estimatedYards: parsedFromPrompt.gender === 'men' ? 5.5 : 7.5,
-            recommendedWeightGsm: parsedFromPrompt.gender === 'men' ? 340 : 180
-          },
-          tailorNotes: parsedFromPrompt.gender === 'men' 
-            ? [
-                'Full floating horsehair canvas chest piece for natural sculptural drape.',
-                'Hand-basted shoulder pads aligned to posture profile.',
-                '2-inch alteration allowance across chest, waist, and trousers.',
-                'AMF pick stitching along lapel edges and pocket flaps.'
-              ]
-            : [
-                'Invisible interior boning structure in bodice for supportive sculpt.',
-                '2.5-inch side margin allowance inside choli/bodice.',
-                'Horsehair braid hem along skirts for dramatic fluid sweep.'
-              ],
-          stylingTips: parsedFromPrompt.gender === 'men'
-            ? ['Pair with an uncut polki brooch, pure silk pocket square, and handcrafted velvet mojaris.']
-            : ['Pair with teardrop pearl earrings, antique gold choker, and embroidered potli bag.'],
-          colorPsychology: `${parsedFromPrompt.color} communicates elevated majesty, serenity, and contemporary couture poise.`,
-          estimatedCraftTimeDays: parsedFromPrompt.gender === 'men' ? 14 : 16,
-          estimatedPriceRange: { min: parsedFromPrompt.gender === 'men' ? 28000 : 25000, max: parsedFromPrompt.gender === 'men' ? 48000 : 42000, currency: 'INR' },
-          specs: {
-            dressType: parsedFromPrompt.dressType as any,
-            occasion: occasion as any,
-            fabric: parsedFromPrompt.fabric as any,
-            color: parsedFromPrompt.color,
-            sleeve: parsedFromPrompt.sleeve as any,
-            neckline: parsedFromPrompt.neckline as any,
-            pattern: parsedFromPrompt.pattern as any
-          }
-        }
-      ]
-    };
-
-    onDesignGenerated(generatedDesign);
   };
 
   const handleFileUpload = (
@@ -499,8 +516,10 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
   };
 
   return (
-    <div id="ai-dress-studio-screen" className="w-full max-w-md mx-auto space-y-5 sm:space-y-6 pb-24 text-[#2D2825] px-4 sm:px-5">
-      
+    <div
+      id="ai-dress-studio-screen"
+      className="w-full max-w-md mx-auto space-y-5 sm:space-y-6 pb-24 text-[#2D2825] px-4 sm:px-5"
+    >
       {/* 1. SCREEN HEADER & GENDER TOGGLE */}
       <div className="flex items-center justify-between pt-1">
         <div>
@@ -508,7 +527,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
             {gender === 'men' ? "Men's Bespoke Atelier" : "Women's Couture Atelier"}
           </span>
           <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#2D2825]">
-            AI Design Studio
+            AI Dress Photo Studio
           </h1>
         </div>
         <div className="flex items-center gap-1.5">
@@ -533,7 +552,8 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
       {/* In-Studio Gender Switcher */}
       <div className="flex items-center p-1 rounded-2xl bg-[#EFE9E2] border border-[#E0D6CC] text-xs">
         <button
-          onClick={() => onGenderChange ? onGenderChange('women') : null}
+          onClick={() => (onGenderChange ? onGenderChange('women') : null)}
+          disabled={isGenerating}
           className={`flex-1 py-1.5 rounded-xl font-bold transition-all cursor-pointer text-center ${
             gender === 'women'
               ? 'bg-white text-[#8D2434] shadow-xs'
@@ -543,7 +563,8 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
           Women's Couture
         </button>
         <button
-          onClick={() => onGenderChange ? onGenderChange('men') : null}
+          onClick={() => (onGenderChange ? onGenderChange('men') : null)}
+          disabled={isGenerating}
           className={`flex-1 py-1.5 rounded-xl font-bold transition-all cursor-pointer text-center ${
             gender === 'men'
               ? 'bg-[#2D2825] text-white shadow-xs'
@@ -554,288 +575,366 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         </button>
       </div>
 
-      {/* 2. LIVE 4-ANGLE COUTURE PREVIEW WITH SKELETON LOADER ANIMATION */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-[#8D2434] animate-ping' : 'bg-emerald-600 animate-pulse'}`} />
-            <span className="font-semibold text-[#2D2825]">
-              {isGenerating ? 'AI Model Synthesizing Design...' : 'Live Atelier Preview'}
+      {/* 2. PROMPT INPUT (PRIMARY DESIGN SPECIFICATION) */}
+      <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-4 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <label className="block text-xs font-bold text-[#2D2825]">
+              {gender === 'men'
+                ? 'Primary Design Prompt (Overrides Form Defaults)'
+                : 'Primary Dress Prompt (Overrides Form Defaults)'}
+            </label>
+            <span className="text-[10px] text-[#7D726A]">
+              Include garment type, colour, fabric, neckline, sleeves, embroidery placement & exclusions
             </span>
           </div>
-          <span className="text-[#8D2434] font-semibold truncate max-w-[200px]">{activeConcept.title}</span>
+          <span className="px-2 py-0.5 rounded-full bg-[#FBECEF] text-[#8D2434] text-[10px] font-bold shrink-0">
+            Prompt Priority
+          </span>
         </div>
 
-        <div className="relative aspect-[4/4.6] rounded-[22px] overflow-hidden bg-[#F5EFEA] border border-[#ECE6DE] shadow-sm group">
-          <img
-            src={
-              previewAngle === 'back' ? activeConcept.variations[0].backImageUrl :
-              previewAngle === 'side' ? activeConcept.variations[0].sideImageUrl :
-              previewAngle === 'detail' ? (activeConcept.variations[0].detailImageUrl || activeConcept.variations[0].frontImageUrl) :
-              activeConcept.variations[0].frontImageUrl
-            }
-            alt={activeConcept.title}
-            onClick={() => !isGenerating && onViewDesignDetails && onViewDesignDetails(activeConcept)}
-            className={`w-full h-full object-cover object-top cursor-pointer transition-all duration-500 ${
-              isGenerating ? 'scale-105 blur-xs opacity-35' : 'scale-100 opacity-100'
-            }`}
-          />
+        <textarea
+          rows={4}
+          maxLength={1000}
+          value={prompt}
+          disabled={isGenerating}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          placeholder={
+            gender === 'men'
+              ? 'e.g. A midnight-black raw silk Jodhpuri Bandhgala suit with a mandarin collar, full sleeves, and gold collar embroidery. No brooch, neutral studio background.'
+              : 'e.g. A blush-pink organza floor-length gown with a sweetheart neckline, full sleeves, fitted waist, and small pearl embellishments. No necklace or belt. Neutral studio background.'
+          }
+          className="w-full text-xs text-[#2D2825] placeholder-[#7D726A] bg-[#FAF7F2]/60 rounded-xl p-3 border border-[#ECE6DE] focus:border-[#8D2434] resize-none focus:outline-none leading-relaxed"
+        />
 
-          {/* SKELETON LOADER ANIMATION WHILE AI MODEL PROCESSES NEW DESIGN */}
-          {isGenerating && (
-            <div
-              data-testid="ai-generator-skeleton"
-              className="absolute inset-0 z-20 bg-[#FAF7F2]/90 backdrop-blur-xs p-4 flex flex-col justify-between animate-in fade-in duration-200"
+        <div className="flex items-center justify-between text-[10px] text-[#7D726A] pt-1">
+          <button
+            type="button"
+            onClick={handleEnhancePromptClarity}
+            disabled={isEnhancingPrompt || isGenerating || !prompt.trim()}
+            className="px-2.5 py-1 rounded-lg bg-[#FAF7F2] hover:bg-[#FBECEF] text-[#8D2434] border border-[#8D2434]/25 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <Wand2 className="w-3 h-3" />
+            <span>{isEnhancingPrompt ? 'Clarifying...' : 'Enhance Clarity & Lighting Only'}</span>
+          </button>
+          <span>{prompt.length}/1000</span>
+        </div>
+
+        {/* Contradiction Warning / Clarification Prompt */}
+        {contradictionCheck.hasContradictions && (
+          <div
+            data-testid="prompt-contradiction-alert"
+            className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs space-y-1.5"
+          >
+            <div className="flex items-center gap-1.5 font-bold text-amber-900">
+              <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>Clarification Needed Before Generating</span>
+            </div>
+            <ul className="list-disc pl-4 space-y-1 text-[11px] text-amber-900">
+              {contradictionCheck.conflicts.map((conflict, idx) => (
+                <li key={idx}>{conflict}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Quick Acceptance & Example Prompt Chips */}
+        <div className="space-y-1 pt-1">
+          <span className="text-[10px] font-semibold text-[#7D726A] block">
+            Example Photographic Prompts:
+          </span>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {promptSuggestions.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                disabled={isGenerating}
+                onClick={() => {
+                  setPrompt(item.text);
+                  setDressType(item.dressType);
+                  setColor(item.color);
+                  setFabric(item.fabric);
+                  setGenerationError(null);
+                }}
+                className="px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] text-[10px] font-medium text-[#7D726A] hover:text-[#2D2825] hover:border-[#8D2434] transition-all whitespace-nowrap cursor-pointer shrink-0"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Resolved Design Specification Summary (Shows how Prompt Overrides Form Defaults) */}
+        <div className="rounded-2xl bg-[#FAF7F2] border border-[#ECE6DE] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-[#2D2825]">
+              Resolved Garment Specification
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPromptInspector(!showPromptInspector)}
+              className="text-[10px] font-semibold text-[#8D2434] cursor-pointer hover:underline"
             >
-              {/* Top Skeleton Header Bar */}
+              {showPromptInspector ? 'Hide Camera Prompt' : 'Inspect Camera Prompt'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+            <div className="bg-white rounded-lg p-2 border border-[#ECE6DE]">
+              <span className="text-[9px] uppercase text-[#7D726A] block">Garment & Length</span>
+              <span className="font-semibold text-[#2D2825]">
+                {resolvedSpec.length} {resolvedSpec.garmentType}
+              </span>
+            </div>
+            <div className="bg-white rounded-lg p-2 border border-[#ECE6DE]">
+              <span className="text-[9px] uppercase text-[#7D726A] block">Colour & Fabric</span>
+              <span className="font-semibold text-[#2D2825]">
+                {resolvedSpec.color} • {resolvedSpec.fabric}
+              </span>
+            </div>
+            <div className="bg-white rounded-lg p-2 border border-[#ECE6DE]">
+              <span className="text-[9px] uppercase text-[#7D726A] block">Neckline & Sleeves</span>
+              <span className="font-semibold text-[#2D2825]">
+                {resolvedSpec.neckline} • {resolvedSpec.sleeves}
+              </span>
+            </div>
+            <div className="bg-white rounded-lg p-2 border border-[#ECE6DE]">
+              <span className="text-[9px] uppercase text-[#7D726A] block">Embroidery / Finish</span>
+              <span className="font-semibold text-[#2D2825] line-clamp-2">
+                {resolvedSpec.embroidery}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-[#5C534B] bg-white rounded-lg p-2 border border-[#ECE6DE] space-y-1">
+            <div>
+              <strong className="text-[#2D2825]">Background:</strong> {resolvedSpec.background}
+            </div>
+            <div>
+              <strong className="text-[#8D2434]">Enforced Exclusions:</strong>{' '}
+              {resolvedSpec.exclusions.slice(0, 3).join(' • ')}
+            </div>
+          </div>
+
+          {showPromptInspector && (
+            <div className="p-2.5 rounded-xl bg-white border border-[#ECE6DE] text-[10px] text-[#5C534B] font-mono leading-relaxed break-words">
+              <span className="text-[9px] uppercase font-sans font-bold text-[#8D2434] block mb-1">
+                Resolved Photographic Model Instruction (Front View):
+              </span>
+              {builtPhotographicPrompts.frontPrompt}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 3. GENERATION ERROR & RETRY CARD (NO SILENT SVG/PLACEHOLDER FALLBACKS) */}
+      {generationError && (
+        <div
+          data-testid="ai-generation-error"
+          className="rounded-2xl bg-[#FFF5F5] border border-[#E53E3E]/40 p-4 space-y-3 shadow-xs"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-[#C53030] shrink-0 mt-0.5" />
+            <div className="space-y-1 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-6 w-14 rounded-full bg-[#E6DDD3] animate-pulse" />
-                  <div className="h-6 w-14 rounded-full bg-[#ECE6DE] animate-pulse" />
-                  <div className="h-6 w-14 rounded-full bg-[#ECE6DE] animate-pulse" />
-                </div>
-                <div className="h-6 w-28 rounded-full bg-[#8D2434]/20 border border-[#8D2434]/30 animate-pulse" />
+                <h3 className="text-xs font-bold text-[#742A2A]">
+                  {generationError.clarificationNeeded
+                    ? 'Prompt Clarification Required'
+                    : 'Photorealistic Image Generation Failed'}
+                </h3>
+                {generationError.code && (
+                  <span className="px-2 py-0.5 rounded bg-[#FED7D7] text-[#742A2A] text-[9px] font-mono font-bold">
+                    {generationError.code}
+                  </span>
+                )}
               </div>
+              <p className="text-xs text-[#742A2A]/90 leading-relaxed">{generationError.message}</p>
+              {generationError.conflicts && generationError.conflicts.length > 0 && (
+                <ul className="list-disc pl-4 text-[11px] text-[#742A2A] space-y-0.5 pt-1">
+                  {generationError.conflicts.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
 
-              {/* Center Couture Mannequin & Garment Wireframe Skeleton */}
-              <div className="my-auto flex flex-col items-center justify-center space-y-3.5 py-2">
-                <div className="relative w-36 h-48 rounded-2xl bg-gradient-to-b from-[#ECE6DE] via-[#F5EFEA] to-[#E5DCD0] border border-[#D8CEC2] p-3 flex flex-col items-center justify-between shadow-inner overflow-hidden">
-                  {/* Animated couture mannequin proportions */}
-                  <div className="w-8 h-8 rounded-full bg-[#D8CEC2] animate-pulse" />
-                  <div className="w-20 h-10 rounded-t-xl bg-[#D8CEC2]/90 animate-pulse" />
-                  <div className="w-14 h-6 rounded-md bg-[#CFC3B4] animate-pulse" />
-                  <div className="w-28 h-20 rounded-b-2xl bg-gradient-to-b from-[#D8CEC2] to-[#C7B9A8] animate-pulse" />
-                  {/* Scanning beam indicator */}
-                  <div className="absolute inset-x-0 top-1/2 h-1 bg-gradient-to-r from-transparent via-[#8D2434]/60 to-transparent animate-bounce" />
+          {generationError.retryable && !generationError.clarificationNeeded && (
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#8D2434] hover:bg-[#741D2B] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Photorealistic Generation</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 4. LOADING PROGRESS OR GENERATED PHOTOGRAPH PREVIEW */}
+      {(isGenerating || activePhotographicDesign) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isGenerating ? 'bg-[#8D2434] animate-ping' : 'bg-emerald-600'
+                }`}
+              />
+              <span className="font-semibold text-[#2D2825]">
+                {isGenerating
+                  ? 'Generating 4-View Fashion Photographs...'
+                  : 'Generated Photographic Views'}
+              </span>
+            </div>
+            <span className="text-[#8D2434] font-semibold truncate max-w-[200px]">
+              {activePhotographicDesign?.title || resolvedSpec.title}
+            </span>
+          </div>
+
+          <div className="relative aspect-[3/4] rounded-[22px] overflow-hidden bg-[#F5EFEA] border border-[#ECE6DE] shadow-sm">
+            {activePhotographicDesign && !isGenerating && (
+              <>
+                <img
+                  src={
+                    previewAngle === 'back'
+                      ? activePhotographicDesign.variations[0].backImageUrl ||
+                        activePhotographicDesign.variations[0].frontImageUrl
+                      : previewAngle === 'side'
+                      ? activePhotographicDesign.variations[0].sideImageUrl ||
+                        activePhotographicDesign.variations[0].frontImageUrl
+                      : previewAngle === 'detail'
+                      ? activePhotographicDesign.variations[0].detailImageUrl ||
+                        activePhotographicDesign.variations[0].frontImageUrl
+                      : activePhotographicDesign.variations[0].frontImageUrl
+                  }
+                  alt={activePhotographicDesign.title}
+                  referrerPolicy="no-referrer"
+                  onClick={() =>
+                    onViewDesignDetails && onViewDesignDetails(activePhotographicDesign)
+                  }
+                  className="w-full h-full object-contain bg-[#F5EFEA] cursor-pointer"
+                />
+                <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+                  <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/15">
+                    {(['front', 'back', 'side', 'detail'] as const).map((ang) => (
+                      <button
+                        key={ang}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewAngle(ang);
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer ${
+                          previewAngle === ang
+                            ? 'bg-white text-[#2D2825] shadow-2xs'
+                            : 'text-white/85 hover:text-white'
+                        }`}
+                      >
+                        {ang === 'detail'
+                          ? 'Detail'
+                          : ang.charAt(0).toUpperCase() + ang.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onViewDesignDetails && onViewDesignDetails(activePhotographicDesign)
+                    }
+                    className="px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-[10px] font-bold text-[#2D2825] flex items-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Eye className="w-3 h-3 text-[#8D2434]" />
+                    <span>Open 3-View Board</span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {isGenerating && (
+              <div
+                data-testid="ai-generator-skeleton"
+                className="absolute inset-0 z-20 bg-[#FAF7F2] p-5 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-[#8D2434]">
+                  <span>Photorealistic Fashion Studio</span>
+                  <span>Stage {generationStage || 1} of 3</span>
                 </div>
 
-                {/* Live AI Stage Progress Pills */}
-                <div className="w-full max-w-[260px] bg-white/90 rounded-2xl border border-[#ECE6DE] p-3 shadow-xs space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-[#8D2434] uppercase tracking-wider">
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 animate-spin" />
-                      <span>AI Couture Synthesis</span>
-                    </span>
-                    <span>Stage {generationStage || 1}/3</span>
+                <div className="my-auto space-y-4 text-center">
+                  <div className="w-16 h-16 rounded-full bg-[#8D2434]/10 border border-[#8D2434]/30 flex items-center justify-center mx-auto">
+                    <Sparkles className="w-7 h-7 text-[#8D2434] animate-spin" />
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-[#ECE6DE] overflow-hidden">
+                  <div className="space-y-2 max-w-xs mx-auto">
+                    <p className="text-xs font-bold text-[#2D2825]">
+                      {generationNotice || 'Generating photorealistic dress photographs...'}
+                    </p>
+                    <p className="text-[11px] text-[#7D726A]">
+                      Generating the front full-length photograph first, then using it as a visual
+                      reference for the back, side, and close-up fabric detail views.
+                    </p>
+                  </div>
+                  <div className="w-full max-w-[260px] mx-auto h-2 rounded-full bg-[#ECE6DE] overflow-hidden">
                     <div
-                      className={`h-full bg-[#8D2434] rounded-full transition-all duration-300 ${
-                        generationStage === 1 ? 'w-1/3' : generationStage === 2 ? 'w-2/3' : 'w-full'
+                      className={`h-full bg-[#8D2434] rounded-full transition-all duration-500 ${
+                        generationStage === 1
+                          ? 'w-1/3'
+                          : generationStage === 2
+                          ? 'w-2/3'
+                          : 'w-11/12'
                       }`}
                     />
                   </div>
-                  <p className="text-[11px] font-medium text-[#2D2825] truncate">
-                    {generationNotice || 'Synthesizing bespoke silhouette...'}
-                  </p>
-                  {/* Skeleton spec lines */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="h-2.5 w-full rounded-full bg-[#ECE6DE] animate-pulse" />
-                    <div className="h-2.5 w-4/5 rounded-full bg-[#ECE6DE] animate-pulse" />
-                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {['1. Front Ref', '2. Back View', '3. Side View', '4. Detail'].map((label, i) => (
+                    <div
+                      key={label}
+                      className={`p-2 rounded-xl border text-[10px] font-semibold ${
+                        (generationStage >= 2 && i === 0) || generationStage >= 3
+                          ? 'bg-[#FBECEF] border-[#8D2434]/40 text-[#8D2434]'
+                          : 'bg-white border-[#ECE6DE] text-[#7D726A]'
+                      }`}
+                    >
+                      {label}
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              {/* Bottom 4-Angle Thumbnail Skeletons */}
-              <div className="grid grid-cols-4 gap-2">
-                {['Front', 'Back', 'Side', 'Macro'].map((label) => (
-                  <div
-                    key={label}
-                    className="h-10 rounded-xl bg-[#E6DDD3]/90 border border-[#D8CEC2] p-1.5 flex flex-col justify-between animate-pulse"
-                  >
-                    <div className="h-2 w-8 rounded bg-[#CFC3B4]" />
-                    <span className="text-[9px] font-bold text-[#7D726A]">{label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Top Angle Switcher Bar */}
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
-            <div className="flex items-center gap-1 bg-black/55 backdrop-blur-md p-1 rounded-full border border-white/15">
-              {(['front', 'back', 'side', 'detail'] as const).map((ang) => (
-                <button
-                  key={ang}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPreviewAngle(ang);
-                  }}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer ${
-                    previewAngle === ang
-                      ? 'bg-white text-[#2D2825] shadow-2xs'
-                      : 'text-white/85 hover:text-white'
-                  }`}
-                >
-                  {ang === 'detail' ? 'Macro' : ang.charAt(0).toUpperCase() + ang.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onViewDesignDetails && onViewDesignDetails(activeConcept)}
-              className="px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-[10px] font-bold text-[#2D2825] flex items-center gap-1 shadow-sm cursor-pointer"
-            >
-              <Eye className="w-3 h-3 text-[#8D2434]" />
-              <span>Full Spec & Yardage</span>
-            </button>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 3. PROMPT INPUT & STRUCTURED PROMPT BUILDER */}
-      <div className="bg-white rounded-[20px] border border-[#ECE6DE] p-4 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="block text-xs font-semibold text-[#2D2825]">
-            {gender === 'men' ? 'Describe your bespoke menswear vision' : 'Describe your couture dress vision'}
-          </label>
-          <span className="px-2 py-0.5 rounded-full bg-[#FBECEF] text-[#8D2434] text-[10px] font-bold">
-            {parsedFromPrompt.dressType}
-          </span>
-        </div>
-        <textarea
-          rows={3}
-          maxLength={300}
-          value={prompt}
-          onChange={(e) => handlePromptChange(e.target.value)}
-          placeholder={gender === 'men' ? 'e.g. Royal raw silk bandhgala with antique brass buttons and jodhpur breeches...' : 'e.g. Emerald green velvet mermaid gown with v-neck and sleeveless cut...'}
-          className="w-full text-xs text-[#2D2825] placeholder-[#7D726A] bg-transparent resize-none focus:outline-none leading-relaxed"
-        />
-        <div className="flex items-center justify-between text-[10px] text-[#7D726A] pt-1 border-t border-[#FAF7F2]">
-          <span className="italic">
-            Detected: {parsedFromPrompt.color} • {parsedFromPrompt.dressType} • {parsedFromPrompt.fabric}
-          </span>
-          <span>{prompt.length}/300</span>
-        </div>
-
-        {/* Quick Suggestion Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pt-1 no-scrollbar">
-          {promptSuggestions.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => {
-                setPrompt(item.text);
-                setDressType(item.dressType);
-                setColor(item.color);
-                setFabric(item.fabric);
-              }}
-              className="px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#ECE6DE] text-[10px] font-medium text-[#7D726A] hover:text-[#2D2825] hover:border-[#8D2434] transition-all whitespace-nowrap cursor-pointer shrink-0"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        {/* STRUCTURED PROMPT BUILDER (Injects 'couture', 'high-fashion', 'macro-detail' & dress-type keywords) */}
-        <div className="rounded-2xl bg-[#FAF7F2] border border-[#ECE6DE] p-3 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Wand2 className="w-3.5 h-3.5 text-[#8D2434]" />
-              <span className="text-[11px] font-bold text-[#2D2825]">
-                Structured Prompt Builder
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-[#8D2434]/10 text-[#8D2434] text-[9px] font-bold uppercase">
-                Auto-Injected
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowStructuredBuilder(!showStructuredBuilder)}
-              className="text-[10px] font-semibold text-[#8D2434] cursor-pointer hover:underline"
-            >
-              {showStructuredBuilder ? 'Compact' : 'Expand'}
-            </button>
-          </div>
-
-          <p className="text-[10px] text-[#7D726A] leading-relaxed">
-            Automatically injects <span className="font-semibold text-[#2D2825]">couture</span>, <span className="font-semibold text-[#2D2825]">high-fashion</span>, <span className="font-semibold text-[#2D2825]">macro-detail</span>, and <span className="font-semibold text-[#8D2434]">{parsedFromPrompt.dressType}</span> craft keywords to maximize AI design relevance.
-          </p>
-
-          {/* Keyword Chips for Selected Dress Type */}
-          <div className="flex flex-wrap gap-1.5">
-            {currentDressKeywords.map((kw) => {
-              const isSelected = selectedStyleKeywords.includes(kw);
-              return (
-                <button
-                  key={kw}
-                  type="button"
-                  onClick={() => toggleStyleKeyword(kw)}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-                    isSelected
-                      ? 'bg-[#2D2825] text-white shadow-2xs'
-                      : 'bg-white text-[#7D726A] border border-[#ECE6DE] hover:border-[#8D2434]'
-                  }`}
-                >
-                  <span>#{kw}</span>
-                  {isSelected && <span className="text-[#E8C5CC] text-[9px]">✓</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          {showStructuredBuilder && (
-            <div className="space-y-2 pt-1">
-              <div className="p-2.5 rounded-xl bg-white border border-[#ECE6DE] text-[10px] text-[#5C534B] font-mono leading-relaxed break-words">
-                <span className="text-[9px] uppercase font-sans font-bold text-[#8D2434] block mb-0.5">
-                  Compiled AI Model Payload:
-                </span>
-                {compiledStructuredPrompt}
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 text-[10px] font-medium text-[#2D2825] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoInjectKeywords}
-                    onChange={(e) => setAutoInjectKeywords(e.target.checked)}
-                    className="rounded border-[#ECE6DE] text-[#8D2434] focus:ring-[#8D2434]"
-                  />
-                  <span>Always inject core couture keywords</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={handleApplyStructuredToPrompt}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#FBECEF] text-[#8D2434] border border-[#8D2434]/30 text-[10px] font-bold transition-colors cursor-pointer shrink-0"
-                >
-                  Write into Prompt Box
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 4. FABRIC SWATCH GALLERY (Women or Men) */}
+      {/* 5. FABRIC SWATCH GALLERY */}
       <FabricSwatchGallery
-        selectedFabricName={parsedFromPrompt.fabric || fabric}
+        selectedFabricName={resolvedSpec.fabric}
         onSelectFabric={(swatch) => {
           setFabric(swatch.name);
         }}
         currentPrompt={prompt}
         onUpdatePromptWithFabric={(newPrompt) => {
-          handlePromptChange(newPrompt.slice(0, 300));
+          handlePromptChange(newPrompt);
         }}
       />
 
-      {/* 5. UPLOAD SKETCH & UPLOAD INSPIRATION IMAGE */}
+      {/* 6. OPTIONAL RASTER SKETCH / INSPIRATION IMAGE UPLOADS */}
       <div className="grid grid-cols-2 gap-2.5">
-        {/* Upload Sketch */}
-        <input 
-          type="file" 
-          ref={sketchInputRef} 
-          onChange={(e) => handleFileUpload(e, setSketchFile)} 
-          accept="image/*" 
-          className="hidden" 
+        <input
+          type="file"
+          ref={sketchInputRef}
+          onChange={(e) => handleFileUpload(e, setSketchFile)}
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
         />
-        <div 
-          onClick={() => sketchInputRef.current?.click()}
+        <div
+          onClick={() => !isGenerating && sketchInputRef.current?.click()}
           className={`p-3 rounded-[16px] border text-left cursor-pointer transition-all flex items-center gap-2 ${
-            sketchFile 
-              ? 'bg-[#FBECEF] border-[#8D2434] text-[#8D2434]' 
+            sketchFile
+              ? 'bg-[#FBECEF] border-[#8D2434] text-[#8D2434]'
               : 'bg-white border-[#ECE6DE] hover:border-[#8D2434] text-[#2D2825]'
           }`}
         >
@@ -843,26 +942,25 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
             <PenTool className="w-3.5 h-3.5 text-[#8D2434]" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[9px] text-[#7D726A] block">Hand sketch</span>
+            <span className="text-[9px] text-[#7D726A] block">Optional Sketch</span>
             <span className="text-xs font-semibold truncate block">
               {sketchFile ? 'Added ✓' : 'Upload Sketch'}
             </span>
           </div>
         </div>
 
-        {/* Upload Inspiration Image */}
-        <input 
-          type="file" 
-          ref={inspirationInputRef} 
-          onChange={(e) => handleFileUpload(e, setInspirationFile)} 
-          accept="image/*" 
-          className="hidden" 
+        <input
+          type="file"
+          ref={inspirationInputRef}
+          onChange={(e) => handleFileUpload(e, setInspirationFile)}
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
         />
-        <div 
-          onClick={() => inspirationInputRef.current?.click()}
+        <div
+          onClick={() => !isGenerating && inspirationInputRef.current?.click()}
           className={`p-3 rounded-[16px] border text-left cursor-pointer transition-all flex items-center gap-2 ${
-            inspirationFile 
-              ? 'bg-[#FBECEF] border-[#8D2434] text-[#8D2434]' 
+            inspirationFile
+              ? 'bg-[#FBECEF] border-[#8D2434] text-[#8D2434]'
               : 'bg-white border-[#ECE6DE] hover:border-[#8D2434] text-[#2D2825]'
           }`}
         >
@@ -870,7 +968,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
             <Camera className="w-3.5 h-3.5 text-[#8D2434]" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[9px] text-[#7D726A] block">Reference</span>
+            <span className="text-[9px] text-[#7D726A] block">Optional Reference</span>
             <span className="text-xs font-semibold truncate block">
               {inspirationFile ? 'Added ✓' : 'Inspiration'}
             </span>
@@ -878,193 +976,235 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         </div>
       </div>
 
-      {/* 6. PRIMARY ATTRIBUTES: Garment Type, Occasion, Fabric, Color */}
-      <div className="grid grid-cols-2 gap-2.5">
-        {/* Silhouette / Type */}
-        <div className="relative">
-          <button
-            onClick={() => setActiveDropdown(activeDropdown === 'dressType' ? null : 'dressType')}
-            className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Package className="w-4 h-4 text-[#8D2434] shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[9px] text-[#7D726A] leading-none">Garment Type</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.dressType || dressType}</div>
-              </div>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
-          </button>
-          {activeDropdown === 'dressType' && (
-            <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
-              {optionsMap.dressType.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => {
-                    setDressType(opt);
-                    setPrompt(`${color} ${fabric} ${opt} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
-                    setActiveDropdown(null);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    (parsedFromPrompt.dressType || dressType) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
+      {/* 7. FALLBACK FORM ATTRIBUTES (Used only when unspecified in prompt) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-[11px] text-[#7D726A]">
+          <span className="font-semibold text-[#2D2825]">
+            Fallback Form Defaults (Used Only If Unspecified in Prompt)
+          </span>
         </div>
-
-        {/* Occasion */}
-        <div className="relative">
-          <button
-            onClick={() => setActiveDropdown(activeDropdown === 'occasion' ? null : 'occasion')}
-            className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Calendar className="w-4 h-4 text-[#8D2434] shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[9px] text-[#7D726A] leading-none">Occasion</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{occasion}</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {/* Garment Type */}
+          <div className="relative">
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() =>
+                setActiveDropdown(activeDropdown === 'dressType' ? null : 'dressType')
+              }
+              className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Package className="w-4 h-4 text-[#8D2434] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[9px] text-[#7D726A] leading-none">Garment Type</div>
+                  <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">
+                    {resolvedSpec.garmentType}
+                  </div>
+                </div>
               </div>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
-          </button>
-          {activeDropdown === 'occasion' && (
-            <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
-              {optionsMap.occasion.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => { setOccasion(opt); setActiveDropdown(null); }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    occasion === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Fabric */}
-        <div className="relative">
-          <button
-            onClick={() => setActiveDropdown(activeDropdown === 'fabric' ? null : 'fabric')}
-            className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Layers className="w-4 h-4 text-[#8D2434] shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[9px] text-[#7D726A] leading-none">Fabric</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.fabric || fabric}</div>
+              <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
+            </button>
+            {activeDropdown === 'dressType' && (
+              <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
+                {optionsMap.dressType.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setDressType(opt);
+                      setActiveDropdown(null);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                      dressType === opt
+                        ? 'bg-[#FBECEF] text-[#8D2434]'
+                        : 'hover:bg-black/5 text-[#2D2825]'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
               </div>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
-          </button>
-          {activeDropdown === 'fabric' && (
-            <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
-              {optionsMap.fabric.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => {
-                    setFabric(opt);
-                    setPrompt(`${color} ${opt} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
-                    setActiveDropdown(null);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    (parsedFromPrompt.fabric || fabric) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Color Palette */}
-        <div className="relative">
-          <button
-            onClick={() => setActiveDropdown(activeDropdown === 'color' ? null : 'color')}
-            className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-4 h-4 rounded-full border border-[#ECE6DE] bg-[#2D2825] shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[9px] text-[#7D726A] leading-none">Color</div>
-                <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">{parsedFromPrompt.color || color}</div>
+          {/* Occasion */}
+          <div className="relative">
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => setActiveDropdown(activeDropdown === 'occasion' ? null : 'occasion')}
+              className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Calendar className="w-4 h-4 text-[#8D2434] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[9px] text-[#7D726A] leading-none">Occasion</div>
+                  <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">
+                    {occasion}
+                  </div>
+                </div>
               </div>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
-          </button>
-          {activeDropdown === 'color' && (
-            <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
-              {optionsMap.color.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => {
-                    setColor(opt);
-                    setPrompt(`${opt} ${fabric} ${dressType} with ${neckStyle.toLowerCase()} and ${sleeves.toLowerCase()}`);
-                    setActiveDropdown(null);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
-                    (parsedFromPrompt.color || color) === opt ? 'bg-[#FBECEF] text-[#8D2434]' : 'hover:bg-black/5 text-[#2D2825]'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
+              <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
+            </button>
+            {activeDropdown === 'occasion' && (
+              <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
+                {optionsMap.occasion.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setOccasion(opt);
+                      setActiveDropdown(null);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                      occasion === opt
+                        ? 'bg-[#FBECEF] text-[#8D2434]'
+                        : 'hover:bg-black/5 text-[#2D2825]'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Fabric */}
+          <div className="relative">
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => setActiveDropdown(activeDropdown === 'fabric' ? null : 'fabric')}
+              className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Layers className="w-4 h-4 text-[#8D2434] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[9px] text-[#7D726A] leading-none">Fabric</div>
+                  <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">
+                    {resolvedSpec.fabric}
+                  </div>
+                </div>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
+            </button>
+            {activeDropdown === 'fabric' && (
+              <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
+                {optionsMap.fabric.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setFabric(opt);
+                      setActiveDropdown(null);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                      fabric === opt
+                        ? 'bg-[#FBECEF] text-[#8D2434]'
+                        : 'hover:bg-black/5 text-[#2D2825]'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Colour */}
+          <div className="relative">
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => setActiveDropdown(activeDropdown === 'color' ? null : 'color')}
+              className="w-full bg-white rounded-[16px] border border-[#ECE6DE] p-3 text-left shadow-2xs hover:border-[#8D2434] transition-all flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-4 h-4 rounded-full border border-[#ECE6DE] bg-[#8D2434] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[9px] text-[#7D726A] leading-none">Colour</div>
+                  <div className="text-xs font-semibold text-[#2D2825] mt-1 truncate">
+                    {resolvedSpec.color}
+                  </div>
+                </div>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-[#7D726A] shrink-0 ml-1" />
+            </button>
+            {activeDropdown === 'color' && (
+              <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white rounded-xl border border-[#ECE6DE] shadow-xl p-1.5 max-h-48 overflow-y-auto">
+                {optionsMap.color.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setColor(opt);
+                      setActiveDropdown(null);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                      color === opt
+                        ? 'bg-[#FBECEF] text-[#8D2434]'
+                        : 'hover:bg-black/5 text-[#2D2825]'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 7. SECONDARY ATTRIBUTES: Collar / Lapels & Sleeves / Cuffs */}
+      {/* 8. SECONDARY FALLBACK ATTRIBUTES: Neckline & Sleeves */}
       <div className="bg-[#FAF7F2] rounded-[18px] border border-[#ECE6DE] p-3.5 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-[#2D2825]">
-            {gender === 'men' ? 'Tailoring Cut & Collar Details' : 'Neckline & Sleeve Styling'}
+            {gender === 'men' ? 'Default Collar & Sleeve Cut' : 'Default Neckline & Sleeve Cut'}
           </span>
           <button
+            type="button"
             onClick={() => setShowMoreOptions(!showMoreOptions)}
             className="text-[11px] font-semibold text-[#8D2434] cursor-pointer"
           >
-            {showMoreOptions ? 'Hide' : 'Customize Details'}
+            {showMoreOptions ? 'Hide' : 'Customize Defaults'}
           </button>
         </div>
 
         {showMoreOptions && (
-          <div className="grid grid-cols-2 gap-2.5 pt-1 animate-in fade-in duration-200">
-            {/* Neck / Lapel */}
+          <div className="grid grid-cols-2 gap-2.5 pt-1">
             <div>
               <label className="text-[9px] uppercase font-bold text-[#7D726A] block mb-1">
                 {gender === 'men' ? 'Collar / Lapel' : 'Neckline Style'}
               </label>
               <select
                 value={neckStyle}
+                disabled={isGenerating}
                 onChange={(e) => setNeckStyle(e.target.value)}
                 className="w-full bg-white border border-[#ECE6DE] rounded-xl p-2 text-xs text-[#2D2825] font-semibold focus:outline-none"
               >
                 {optionsMap.neckStyle.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
             </div>
 
-            {/* Sleeve / Cuff */}
             <div>
               <label className="text-[9px] uppercase font-bold text-[#7D726A] block mb-1">
-                {gender === 'men' ? 'Cuff / Sleeve Stance' : 'Sleeve Style'}
+                {gender === 'men' ? 'Cuff / Sleeve Style' : 'Sleeve Style'}
               </label>
               <select
                 value={sleeves}
+                disabled={isGenerating}
                 onChange={(e) => setSleeves(e.target.value)}
                 className="w-full bg-white border border-[#ECE6DE] rounded-xl p-2 text-xs text-[#2D2825] font-semibold focus:outline-none"
               >
                 {optionsMap.sleeves.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1074,7 +1214,7 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         {onOpenFabricLibrary && (
           <div className="pt-2 border-t border-[#ECE6DE] flex items-center justify-between">
             <span className="text-[11px] text-[#7D726A]">
-              Want to inspect high-res weaves & request a feeler swatch?
+              Inspect textile GSM weights & feeler swatches
             </span>
             <button
               type="button"
@@ -1088,30 +1228,37 @@ export const AIDressGenerator: React.FC<AIDressGeneratorProps> = ({
         )}
       </div>
 
-      {/* 8. GENERATE BUTTON */}
-      <div className="space-y-2 pt-1">
+      {/* 9. GENERATE PHOTOREALISTIC DRESS BUTTON */}
+      <div className="space-y-2.5 pt-1">
         {generationNotice && (
-          <p className="text-xs text-center text-[#8D2434] animate-pulse">
+          <p className="text-xs text-center text-[#8D2434] font-medium animate-pulse">
             {generationNotice}
           </p>
         )}
 
         <button
+          type="button"
+          data-testid="generate-dress-submit-btn"
           onClick={handleGenerate}
-          disabled={isGenerating}
-          className="w-full py-4 rounded-full bg-[#2D2825] hover:bg-[#1A1816] active:scale-[0.98] transition-all text-white font-semibold text-xs uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+          disabled={isGenerating || contradictionCheck.hasContradictions}
+          className="w-full py-4 rounded-full bg-[#2D2825] hover:bg-[#1A1816] active:scale-[0.98] transition-all text-white font-semibold text-xs uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Sparkles className="w-4 h-4 text-[#E8C5CC]" />
           <span>
-            {isGenerating 
-              ? 'Synthesizing Couture...' 
-              : gender === 'men' 
-                ? 'Generate Bespoke Menswear' 
-                : 'Generate Dream Dress'}
+            {isGenerating
+              ? 'Generating Photorealistic Views...'
+              : gender === 'men'
+              ? 'Generate Photorealistic Menswear'
+              : 'Generate Photorealistic Dress'}
           </span>
         </button>
-      </div>
 
+        <p className="text-[10px] text-[#7D726A] text-center leading-relaxed px-2">
+          Generates a photorealistic AI fashion visualization (Front view first, followed by
+          reference-conditioned Back, Side, and Macro Detail views). AI visualizations represent
+          proposed garment concepts rather than manufactured inventory or guaranteed tailoring quotes.
+        </p>
+      </div>
     </div>
   );
 };

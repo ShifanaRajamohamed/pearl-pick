@@ -73,49 +73,61 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   }[] = [
     {
       id: 'women',
-      title: 'Women',
+      title: "Women's Section",
       subtitle: 'Couture Gowns, Sarees & Lehengas',
-      image:
-        'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=700&auto=format&fit=crop&q=80',
+      image: '/assets/catalog/w-wine-organza-floral-gown-front.jpg',
     },
     {
       id: 'men',
-      title: 'Men',
-      subtitle: 'Bandhgalas, Sherwanis & Bespoke Suits',
-      image:
-        'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=700&auto=format&fit=crop&q=80',
+      title: "Men's Section",
+      subtitle: 'Bandhgalas, Achkans & Bespoke Suits',
+      image: '/assets/catalog/m-navy-3piece-suit-front.jpg',
     },
     {
       id: 'ethnic',
-      title: 'Ethnic',
-      subtitle: 'Handloom Banarasi, Kanjeevaram & Chikankari',
-      image:
-        'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=700&auto=format&fit=crop&q=80',
+      title: 'Ethnic & Handloom',
+      subtitle: 'Banarasi, Kanjeevaram & Chikankari',
+      image: '/assets/catalog/w-purple-banarasi-saree-front.jpg',
     },
     {
       id: 'festive',
       title: 'Festive & Bridal',
       subtitle: 'Wedding Trousseau, Sangeet & Reception',
-      image:
-        'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=700&auto=format&fit=crop&q=80',
+      image: '/assets/catalog/w-crimson-kanjeevaram-saree-front.jpg',
     },
     {
       id: 'collections',
-      title: 'Collections',
-      subtitle: 'Limited-Edition Runway & Atelier Capsules',
-      image:
-        'https://images.unsplash.com/photo-1518049362265-d5b2a6467637?w=700&auto=format&fit=crop&q=80',
+      title: 'Runway Capsules',
+      subtitle: 'Velvet, Guipure Lace & Atelier Editions',
+      image: '/assets/catalog/w-emerald-lace-gown-front.jpg',
     },
   ];
 
   const approvedProducts = products.filter(
     (p) => !p.moderationStatus || p.moderationStatus === 'APPROVED'
   );
-  const featuredProducts = approvedProducts.slice(0, 4);
+  const genderFilteredProducts = approvedProducts.filter((p) => {
+    const isMen =
+      p.gender === 'men' ||
+      p.categoryLabel === "Men's Bespoke" ||
+      p.id.startsWith('prod-m-') ||
+      (p.tags || []).some((t) => t.toLowerCase() === 'men' || t.toLowerCase() === 'menswear');
+    return gender === 'men' ? isMen : !isMen;
+  });
+  const activeGenderProducts =
+    genderFilteredProducts.length > 0 ? genderFilteredProducts : approvedProducts;
+  const featuredProducts = activeGenderProducts.slice(0, 4);
   const trendingProducts =
-    approvedProducts.slice(4, 8).length > 0
-      ? approvedProducts.slice(4, 8)
-      : approvedProducts.slice(0, 4);
+    activeGenderProducts.slice(4, 8).length > 0
+      ? activeGenderProducts.slice(4, 8)
+      : activeGenderProducts.slice(0, 4);
+
+  const activeFeaturedDesign =
+    featuredDesigns.find((d) =>
+      gender === 'men'
+        ? d.gender === 'men' || d.id.includes('men') || d.tags?.some((t) => t.toLowerCase() === 'men')
+        : d.gender === 'women' || (!d.id.includes('men') && !d.tags?.some((t) => t.toLowerCase() === 'men'))
+    ) || featuredDesigns[0];
 
   // Live Flash Sale Countdown Timer (Myntra/Amazon style)
   const [timeLeft, setTimeLeft] = useState({ hours: 4, minutes: 28, seconds: 15 });
@@ -158,19 +170,109 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         </div>
       </div>
 
-      {/* 0.1 MYNTRA-STYLE CIRCULAR CATEGORY STORY BAR */}
+      {/* 0.1 LUXURY ATELIER CIRCULAR CATEGORY MEDALLION BAR */}
       <div className="overflow-x-auto pb-1 scrollbar-none">
-        <div className="flex items-center gap-4 sm:gap-6 min-w-max px-1">
+        <div className="flex items-center justify-between gap-4 sm:gap-6 min-w-max px-1">
           {[
-            { label: 'All Store', icon: '✨', cat: undefined },
-            { label: "Women's Couture", icon: '👗', cat: 'women' as StorefrontCategory },
-            { label: "Men's Bespoke", icon: '👔', cat: 'men' as StorefrontCategory },
-            { label: 'Heritage Silks', icon: '🥻', cat: 'ethnic' as StorefrontCategory },
-            { label: 'Bridal & Festive', icon: '👑', cat: 'festive' as StorefrontCategory },
-            { label: 'Runway Capsules', icon: '💎', cat: 'collections' as StorefrontCategory },
-            { label: 'AI Design Studio', icon: '✨', action: () => onStartGenerator() },
-            { label: 'Master Tailors', icon: '✂️', action: onExploreTailors },
-            { label: 'Flat 50% Deals', icon: '🔥', cat: 'featured' as any }
+            {
+              label: 'All Store',
+              sub: 'Maison',
+              cat: undefined,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                </svg>
+              ),
+            },
+            {
+              label: "Women's Couture",
+              sub: 'Gowns & Drapes',
+              cat: 'women' as StorefrontCategory,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 3L10.5 7.5L8 11L5 21H19L16 11L13.5 7.5L15 3" />
+                  <path d="M9.5 7.5H14.5" />
+                  <path d="M8 14.5C10.5 15.5 13.5 15.5 16 14.5" />
+                </svg>
+              ),
+            },
+            {
+              label: "Men's Bespoke",
+              sub: 'Sherwani & Suits',
+              cat: 'men' as StorefrontCategory,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 4L9 3H15L18 4L20 9L17 11V21H7V11L4 9L6 4Z" />
+                  <path d="M9 3L12 10L15 3" />
+                  <path d="M12 10V21" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Heritage Silks',
+              sub: 'Handloom Weaves',
+              cat: 'ethnic' as StorefrontCategory,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L19 9L12 16L5 9L12 2Z" />
+                  <path d="M5 13L12 20L19 13" />
+                  <circle cx="12" cy="9" r="1.5" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Bridal & Festive',
+              sub: 'Royal Trousseau',
+              cat: 'festive' as StorefrontCategory,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 18H21" />
+                  <path d="M4 15L2 7L8.5 11L12 4L15.5 11L22 7L20 15H4Z" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Runway Capsules',
+              sub: 'Limited Editions',
+              cat: 'collections' as StorefrontCategory,
+              accent: false,
+              renderIcon: () => (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 3H18L22 9L12 21L2 9L6 3Z" />
+                  <path d="M2 9H22" />
+                  <path d="M12 3L8 9L12 21L16 9L12 3Z" />
+                </svg>
+              ),
+            },
+            {
+              label: 'AI Design Studio',
+              sub: '3-View Bespoke',
+              action: () => onStartGenerator(),
+              accent: true,
+              renderIcon: () => <Sparkles className="w-5 h-5" strokeWidth={1.5} />,
+            },
+            {
+              label: 'Master Tailors',
+              sub: 'Verified Ateliers',
+              action: onExploreTailors,
+              accent: false,
+              renderIcon: () => <Scissors className="w-5 h-5" strokeWidth={1.5} />,
+            },
+            {
+              label: 'Privilege Edit',
+              sub: 'Up to 50% Off',
+              cat: 'featured' as any,
+              accent: false,
+              renderIcon: () => <Percent className="w-5 h-5" strokeWidth={1.5} />,
+            },
           ].map((item, idx) => (
             <button
               key={idx}
@@ -181,12 +283,31 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               }}
               className="flex flex-col items-center gap-1.5 group cursor-pointer focus:outline-none"
             >
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border-2 border-[#E4D9D1] group-hover:border-[#8D2434] group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center text-xl sm:text-2xl">
-                {item.icon}
+              <div
+                className={`w-15 h-15 sm:w-16 sm:h-16 rounded-full p-1 transition-all duration-300 shadow-2xs group-hover:shadow-md group-hover:-translate-y-0.5 ${
+                  item.accent
+                    ? 'bg-gradient-to-tr from-[#8D2434] via-[#B43B4E] to-[#D4AF37]'
+                    : 'bg-white border border-[#D8CEC3] group-hover:border-[#8D2434]'
+                }`}
+              >
+                <div
+                  className={`w-full h-full rounded-full flex items-center justify-center transition-colors duration-300 ${
+                    item.accent
+                      ? 'bg-[#1F1B18] text-[#FAF7F2] group-hover:bg-[#8D2434]'
+                      : 'bg-[#FAF7F2] border border-[#ECE6DE] text-[#2D2825] group-hover:bg-[#8D2434] group-hover:text-white group-hover:border-[#8D2434]'
+                  }`}
+                >
+                  {item.renderIcon()}
+                </div>
               </div>
-              <span className="text-[11px] font-bold text-[#2D2825] group-hover:text-[#8D2434] transition-colors whitespace-nowrap">
-                {item.label}
-              </span>
+              <div className="text-center">
+                <span className="block text-[11px] font-bold text-[#2D2825] group-hover:text-[#8D2434] transition-colors whitespace-nowrap leading-tight">
+                  {item.label}
+                </span>
+                <span className="block text-[9px] uppercase tracking-wider text-[#8E847D] font-medium whitespace-nowrap mt-0.5">
+                  {item.sub}
+                </span>
+              </div>
             </button>
           ))}
         </div>
@@ -271,8 +392,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               <img
                 src={
                   gender === 'men'
-                    ? 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80'
-                    : 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=800&auto=format&fit=crop&q=80'
+                    ? '/assets/catalog/m-navy-3piece-suit-front.jpg'
+                    : '/assets/catalog/w-purple-banarasi-saree-front.jpg'
                 }
                 alt="Editorial Collection Primary"
                 referrerPolicy="no-referrer"
@@ -283,7 +404,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   Signature Look
                 </p>
                 <p className="text-xs font-serif font-semibold truncate">
-                  {gender === 'men' ? 'Royal Jodhpuri Bandhgala' : 'Ivory Pearl Zardozi Lehenga'}
+                  {gender === 'men'
+                    ? 'Midnight Navy 3-Piece Bespoke Suit'
+                    : 'Royal Purple Banarasi Katan Silk Saree'}
                 </p>
               </div>
             </div>
@@ -292,8 +415,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               <img
                 src={
                   gender === 'men'
-                    ? 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80'
-                    : 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=800&auto=format&fit=crop&q=80'
+                    ? '/assets/catalog/m-obsidian-bandhgala-tux-front.jpg'
+                    : '/assets/catalog/w-wine-organza-floral-gown-front.jpg'
                 }
                 alt="Editorial Collection Secondary"
                 referrerPolicy="no-referrer"
@@ -304,7 +427,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   Bespoke Studio
                 </p>
                 <p className="text-xs font-serif font-semibold truncate">
-                  {gender === 'men' ? 'Savile Row 3-Piece Tuxedo' : 'Banarasi Silk Anarkali'}
+                  {gender === 'men'
+                    ? 'Obsidian Peak-Lapel Bandhgala Tuxedo'
+                    : 'Rose-Wine 3D Floral Organza Gown'}
                 </p>
               </div>
             </div>
@@ -570,10 +695,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
 
-              {featuredDesigns[0] && (
+              {activeFeaturedDesign && (
                 <button
                   type="button"
-                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  onClick={() => onSelectDesign(activeFeaturedDesign)}
                   className="px-5 py-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-xs font-bold text-[#2D2825] transition-all cursor-pointer"
                 >
                   Inspect Sample 3-View Design Sheet
@@ -584,15 +709,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
           {/* 3-Panel Preview Showcase */}
           <div className="lg:col-span-6 grid grid-cols-3 gap-3 bg-[#FAF7F2] p-4 rounded-2xl border border-[#ECE6DE]">
-            {featuredDesigns[0]?.variations[0] ? (
+            {activeFeaturedDesign?.variations[0] ? (
               <>
                 <div
-                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  onClick={() => onSelectDesign(activeFeaturedDesign)}
                   className="space-y-1.5 cursor-pointer group"
                 >
                   <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
                     <img
-                      src={featuredDesigns[0].variations[0].frontImageUrl}
+                      src={activeFeaturedDesign.variations[0].frontImageUrl}
                       alt="Front View"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
@@ -604,14 +729,14 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 </div>
 
                 <div
-                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  onClick={() => onSelectDesign(activeFeaturedDesign)}
                   className="space-y-1.5 cursor-pointer group"
                 >
                   <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
                     <img
                       src={
-                        featuredDesigns[0].variations[0].backImageUrl ||
-                        featuredDesigns[0].variations[0].frontImageUrl
+                        activeFeaturedDesign.variations[0].backImageUrl ||
+                        activeFeaturedDesign.variations[0].frontImageUrl
                       }
                       alt="Back View"
                       referrerPolicy="no-referrer"
@@ -624,14 +749,14 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 </div>
 
                 <div
-                  onClick={() => onSelectDesign(featuredDesigns[0])}
+                  onClick={() => onSelectDesign(activeFeaturedDesign)}
                   className="space-y-1.5 cursor-pointer group"
                 >
                   <div className="aspect-[3/4] rounded-xl overflow-hidden bg-white border border-[#E4D9D1]">
                     <img
                       src={
-                        featuredDesigns[0].variations[0].sideImageUrl ||
-                        featuredDesigns[0].variations[0].frontImageUrl
+                        activeFeaturedDesign.variations[0].sideImageUrl ||
+                        activeFeaturedDesign.variations[0].frontImageUrl
                       }
                       alt="Side View"
                       referrerPolicy="no-referrer"

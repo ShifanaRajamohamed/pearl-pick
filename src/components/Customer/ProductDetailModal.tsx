@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Heart,
@@ -63,34 +63,29 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [showSizeChart, setShowSizeChart] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
 
+  useEffect(() => {
+    setActivePhotoIndex(0);
+    if (product?.sizes?.length) {
+      setSelectedSize(product.sizes[0]);
+    }
+  }, [product?.id]);
+
   if (!isOpen || !product) return null;
 
-  // Multi-angle photo resolution
+  // Multi-angle photo resolution strictly matched to this garment
+  const frontUrl = product.frontImageUrl || product.images[0];
+  const backUrl = product.backImageUrl || product.images[1] || frontUrl;
+  const sideUrl = product.sideImageUrl || product.images[2] || frontUrl;
+  const detailUrl = product.detailImageUrl || product.images[3] || frontUrl;
+
   const photoAngles = [
-    { label: 'Front View', url: product.frontImageUrl || product.images[0] },
-    {
-      label: 'Back View',
-      url:
-        product.backImageUrl ||
-        product.images[1] ||
-        'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=1000&auto=format&fit=crop&q=80'
-    },
-    {
-      label: 'Side Silhouette',
-      url:
-        product.sideImageUrl ||
-        product.images[2] ||
-        product.images[0]
-    },
-    {
-      label: 'Textile Detail',
-      url:
-        product.images[3] ||
-        'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1000&auto=format&fit=crop&q=80'
-    }
+    { label: 'Front View', shortLabel: 'Front View', url: frontUrl },
+    { label: 'Back View', shortLabel: 'Back View', url: backUrl },
+    { label: 'Side View', shortLabel: 'Side View', url: sideUrl },
+    { label: 'Textile Detail', shortLabel: 'Macro Weave', url: detailUrl }
   ];
 
-  const currentPhoto = photoAngles[activePhotoIndex]?.url || product.images[0];
+  const currentPhoto = photoAngles[activePhotoIndex]?.url || frontUrl;
   const discountPercent = product.originalPrice
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 20;
@@ -226,30 +221,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Thumbnail Strip */}
-            <div className="grid grid-cols-4 gap-2">
-              {photoAngles.map((angle, idx) => (
-                <button
-                  key={angle.label}
-                  type="button"
-                  onClick={() => setActivePhotoIndex(idx)}
-                  className={`relative aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
-                    activePhotoIndex === idx
-                      ? 'border-[#8D2434] ring-2 ring-[#8D2434]/20 scale-102'
-                      : 'border-transparent opacity-75 hover:opacity-100'
-                  }`}
-                >
-                  <img
-                    src={angle.url}
-                    alt={angle.label}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover object-top"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-[#2D2825]/75 text-[8px] font-semibold text-white text-center py-0.5 truncate">
-                    {angle.label.split(' ')[0]}
-                  </div>
-                </button>
-              ))}
+            {/* Thumbnail Strip (Front, Back, Side, Textile Detail) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#7D726A] px-0.5">
+                <span>Select Studio Angle</span>
+                <span className="text-[#8D2434]">{photoAngles[activePhotoIndex]?.label}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {photoAngles.map((angle, idx) => (
+                  <button
+                    key={angle.label}
+                    type="button"
+                    onClick={() => setActivePhotoIndex(idx)}
+                    className={`relative aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                      activePhotoIndex === idx
+                        ? 'border-[#8D2434] ring-2 ring-[#8D2434]/20 scale-102'
+                        : 'border-[#E4D9D1] opacity-80 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={angle.url}
+                      alt={`${product.title} — ${angle.label}`}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-top"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-[#2D2825]/85 text-[9px] font-bold text-white text-center py-1 truncate px-1">
+                      {angle.shortLabel}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Atelier Verification Trust Card */}

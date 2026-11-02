@@ -140,7 +140,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-serif font-bold text-white">{activeUser.name}</h3>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#D4AF37] text-[#3D2C24]">
-                  {activeUser.role === 'customer' ? 'Bespoke Client' : activeUser.role === 'tailor' ? 'Master Darzi' : 'Super Admin'}
+                  {activeUser.role === 'CUSTOMER' || activeUser.role === 'customer'
+                    ? 'Bespoke Client'
+                    : activeUser.role === 'DESIGNER' || activeUser.role === 'tailor'
+                    ? 'Master Darzi'
+                    : 'Super Admin'}
                 </span>
               </div>
               <p className="text-xs text-[#FAF7F2]/80 mt-0.5 flex items-center gap-2">

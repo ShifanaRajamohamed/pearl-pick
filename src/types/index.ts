@@ -1,20 +1,25 @@
-export type UserRole = 'customer' | 'tailor' | 'admin';
+import { CanonicalRole, AccountStatus, DesignerVerificationStatus } from './rbac';
+export type { CanonicalRole, AccountStatus, DesignerVerificationStatus };
+
+export type UserRole = CanonicalRole | 'customer' | 'tailor' | 'admin';
 
 export interface AuthUser {
   id: string;
   name: string;
   phone: string;
   email: string;
-  role: UserRole;
+  role: CanonicalRole;
   avatar: string;
   city: string;
   savedAddresses?: string[];
   walletBalanceINR: number;
-  accountStatus?: 'ACTIVE' | 'SUSPENDED' | 'PENDING_APPROVAL';
+  accountStatus: AccountStatus;
   tailorProfileId?: string;
+  designerVerificationStatus?: DesignerVerificationStatus;
+  rejectionReason?: string;
 }
 
-export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW' | 'INFO_REQUESTED' | 'SUSPENDED';
+export type VerificationStatus = DesignerVerificationStatus | 'UNDER_REVIEW' | 'INFO_REQUESTED' | 'SUSPENDED';
 
 export type GenderCategory = 'women' | 'men' | 'all';
 
@@ -189,6 +194,7 @@ export interface DressDesignVariation {
 
 export interface DressDesign {
   id: string;
+  gender?: 'women' | 'men';
   customerId: string;
   customerName: string;
   title: string;
@@ -244,6 +250,8 @@ export interface TailorProfile {
   pricingRange?: string;
   verificationDocuments?: TailorVerificationDocument[];
   adminNotes?: string;
+  rejectionReason?: string;
+  accountStatus?: AccountStatus;
 }
 
 export interface QuotationItem {
@@ -586,6 +594,7 @@ export type AnalyticsSummary = AdminAnalytics & {
 
 export interface MarketplaceProduct {
   id: string;
+  gender?: 'women' | 'men';
   title: string;
   category: 'ready-to-wear' | 'featured' | 'designer' | 'premium' | 'limited-edition' | 'curated-resale';
   categoryLabel: string;
@@ -599,6 +608,7 @@ export interface MarketplaceProduct {
   frontImageUrl?: string;
   backImageUrl?: string;
   sideImageUrl?: string;
+  detailImageUrl?: string;
   sizes: string[];
   fabric: string;
   fabricType?: string;
@@ -658,12 +668,27 @@ export interface DisputeRecord {
 
 export interface ApprovalAuditLog {
   id: string;
+  actorId?: string;
+  actorName?: string;
+  actorRole?: CanonicalRole;
   targetId?: string;
   targetName?: string;
   tailorId?: string;
   tailorName?: string;
-  action: 'APPROVED' | 'REJECTED' | 'INFO_REQUESTED' | 'SUSPENDED' | 'REACTIVATED' | 'PRODUCT_MODERATED' | 'COMMISSION_UPDATED' | 'DISPUTE_RESOLVED';
+  action:
+    | 'APPROVED'
+    | 'VERIFIED'
+    | 'REJECTED'
+    | 'REVOKED'
+    | 'INFO_REQUESTED'
+    | 'SUSPENDED'
+    | 'REACTIVATED'
+    | 'PRODUCT_MODERATED'
+    | 'COMMISSION_UPDATED'
+    | 'DISPUTE_RESOLVED'
+    | 'ESCROW_RELEASED';
   adminName?: string;
+  reason?: string;
   note?: string;
   adminNote?: string;
   timestamp: string;

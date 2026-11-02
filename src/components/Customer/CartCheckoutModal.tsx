@@ -311,7 +311,7 @@ export const CartCheckoutModal: React.FC<CartCheckoutModalProps> = ({
                           Deliver to: <strong className="text-[#8D2434]">{deliveryPincode}</strong>
                         </span>
                         <span className="text-[11px] text-emerald-700 font-semibold block truncate">
-                          ⚡ Free Express Delivery by Tomorrow, 5 PM
+                          Complimentary Express Delivery by Tomorrow, 5 PM
                         </span>
                       </div>
                     </div>
@@ -570,7 +570,7 @@ export const CartCheckoutModal: React.FC<CartCheckoutModalProps> = ({
 
                     {totalSavings > 0 && (
                       <div className="p-2.5 rounded-xl bg-[#F0FDF4] text-emerald-800 text-[11px] font-bold text-center border border-[#BBF7D0]">
-                        🎉 You will save ₹{totalSavings.toLocaleString('en-IN')} on this order!
+                        Privilege Savings: ₹{totalSavings.toLocaleString('en-IN')} saved on this order
                       </div>
                     )}
                   </div>

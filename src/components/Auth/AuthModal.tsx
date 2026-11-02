@@ -19,39 +19,42 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { AuthUser, UserRole, TailorProfile } from '../../types';
-import { DEMO_USERS } from '../../data/mockData';
+import { CanonicalRole, normalizeRole } from '../../types/rbac';
+import { apiClient, setCsrfToken } from '../../services/apiClient';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoginSuccess: (user: AuthUser, newDesignerApplication?: TailorProfile) => void;
+  onLoginSuccess: (user: AuthUser, designerProfile?: TailorProfile | null) => void;
   initialRole?: UserRole;
+  initialMode?: 'login' | 'signup';
   isFullPagePortal?: boolean;
   onSwitchToDesignerPortal?: () => void;
   onBackToStorefront?: () => void;
+  onChangeDesignerMode?: (mode: 'login' | 'signup') => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onLoginSuccess,
-  initialRole = 'customer',
+  initialRole = 'CUSTOMER',
+  initialMode = 'login',
   isFullPagePortal = false,
   onSwitchToDesignerPortal,
   onBackToStorefront,
+  onChangeDesignerMode
 }) => {
-  const [selectedPortal, setSelectedPortal] = useState<UserRole>(initialRole);
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
+  const resolvedInitialRole: CanonicalRole = normalizeRole(initialRole) || 'CUSTOMER';
+  const [selectedPortal, setSelectedPortal] = useState<CanonicalRole>(resolvedInitialRole);
+  const [mode, setMode] = useState<'login' | 'signup'>(
+    resolvedInitialRole === 'ADMIN' ? 'login' : initialMode
+  );
+  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
 
-  // OTP state
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpHint, setOtpHint] = useState('');
-
-  // Credentials
-  const [mobileOrEmail, setMobileOrEmail] = useState('9820154321');
-  const [password, setPassword] = useState('password123');
+  // Credentials (no hardcoded admin passwords embedded in frontend code)
+  const [mobileOrEmail, setMobileOrEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Common Sign up fields
@@ -76,99 +79,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [statusBanner, setStatusBanner] = useState('');
 
   useEffect(() => {
-    setSelectedPortal(initialRole);
+    const nextRole = normalizeRole(initialRole) || 'CUSTOMER';
+    setSelectedPortal(nextRole);
+    setMode(nextRole === 'ADMIN' ? 'login' : initialMode);
+    setLoginMethod('password');
     setErrorMessage('');
     setStatusBanner('');
-    setOtpSent(false);
-    setOtpCode('');
-    if (initialRole === 'admin') {
-      setMode('login');
-      setLoginMethod('password');
-      setMobileOrEmail('admin@pearlpick.in');
-      setPassword('admin123');
-    } else if (initialRole === 'tailor') {
-      setLoginMethod('password');
-      setMobileOrEmail('9811234567');
-      setPassword('darzi123');
+    setPassword('');
+    if (nextRole === 'ADMIN') {
+      setMobileOrEmail('');
+    } else if (nextRole === 'DESIGNER') {
+      setMobileOrEmail('');
     } else {
-      setMobileOrEmail('9820154321');
-      setPassword('password123');
+      setMobileOrEmail('');
     }
-  }, [initialRole, isOpen]);
+  }, [initialRole, initialMode, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleModeSwitch = (nextMode: 'login' | 'signup') => {
+    if (selectedPortal === 'ADMIN') return;
+    setMode(nextMode);
     setErrorMessage('');
     setStatusBanner('');
-    const cleanPhone = mobileOrEmail.replace(/\D/g, '').slice(-10);
-    if (cleanPhone.length !== 10) {
-      setErrorMessage('Please enter a valid 10-digit mobile number to receive OTP.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone }),
-      });
-      const data = await res.json();
-      setIsLoading(false);
-      if (!res.ok) {
-        setErrorMessage(data.error || 'Could not send OTP.');
-        return;
-      }
-      setOtpSent(true);
-      setOtpHint(data.otpHint || '4829');
-      setOtpCode(data.otpHint || '4829');
-      setStatusBanner(`OTP sent to +91 ${cleanPhone}. (Verification code: ${data.otpHint || '4829'})`);
-    } catch {
-      setIsLoading(false);
-      setOtpSent(true);
-      setOtpHint('4829');
-      setOtpCode('4829');
-      setStatusBanner(`OTP sent to +91 ${cleanPhone}. (Verification code: 4829)`);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    const cleanPhone = mobileOrEmail.replace(/\D/g, '').slice(-10);
-    if (!otpCode || otpCode.trim().length < 4) {
-      setErrorMessage('Please enter the 4-digit OTP.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, otp: otpCode.trim(), name: fullName || undefined }),
-      });
-      const data = await res.json();
-      setIsLoading(false);
-      if (!res.ok) {
-        setErrorMessage(data.error || 'Invalid OTP.');
-        return;
-      }
-      if (data.token) {
-        try {
-          localStorage.setItem('pearl_pick_session_token', data.token);
-          localStorage.setItem('pearl_pick_session_user', JSON.stringify(data.user));
-        } catch {}
-      }
-      onLoginSuccess(data.user);
-      onClose();
-    } catch {
-      setIsLoading(false);
-      const fallbackUser = DEMO_USERS[0];
-      onLoginSuccess(fallbackUser);
-      onClose();
+    if (selectedPortal === 'DESIGNER' && onChangeDesignerMode) {
+      onChangeDesignerMode(nextMode);
     }
   };
 
@@ -177,130 +112,79 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage('');
     setStatusBanner('');
 
-    if (selectedPortal === 'admin' && mode === 'signup') {
+    if (selectedPortal === 'ADMIN' && mode === 'signup') {
       setErrorMessage('Admin accounts cannot be publicly registered.');
       return;
     }
 
-    if (!password || password.length < 4) {
-      setErrorMessage('Password must be at least 4 characters.');
+    if (!mobileOrEmail.trim()) {
+      setErrorMessage('Please enter your registered email address or 10-digit mobile number.');
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
       return;
     }
 
     setIsLoading(true);
     try {
-      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const cleanPhone = mobileOrEmail.replace(/\D/g, '').slice(-10);
-      const payload =
-        mode === 'login'
-          ? {
-              phoneOrEmail: mobileOrEmail.includes('@') ? mobileOrEmail.trim() : cleanPhone,
-              password,
-              role: selectedPortal,
-            }
-          : {
-              name: fullName || (selectedPortal === 'tailor' ? 'Aarav Singhania' : 'Diya Sengupta'),
-              phone: cleanPhone || '9820154321',
-              email: email || `${cleanPhone || 'member'}@pearlpick.in`,
-              password,
-              role: selectedPortal,
-              city,
-              shopName: selectedPortal === 'tailor' ? shopName : undefined,
-              specialties:
-                selectedPortal === 'tailor'
-                  ? specialization.split(',').map((s) => s.trim())
-                  : undefined,
-              experienceYears: selectedPortal === 'tailor' ? Number(experienceYears) : undefined,
-              pricingRange: selectedPortal === 'tailor' ? pricingRange : undefined,
-              portfolioUrl: selectedPortal === 'tailor' ? portfolioUrl : undefined,
-              verificationId: selectedPortal === 'tailor' ? verificationId : undefined,
-            };
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
+      if (mode === 'login') {
+        const data = await apiClient.login({
+          phoneOrEmail: mobileOrEmail.includes('@') ? mobileOrEmail.trim() : cleanPhone || mobileOrEmail.trim(),
+          password,
+          role: selectedPortal
+        });
+        setCsrfToken(data.csrfToken);
+        setIsLoading(false);
+        onLoginSuccess(data.user, data.designerProfile);
+        onClose();
+      } else {
+        if (selectedPortal === 'ADMIN') {
+          setIsLoading(false);
+          setErrorMessage('Admin registration is disabled.');
+          return;
+        }
+        const data = await apiClient.register({
+          name: fullName.trim(),
+          phone: cleanPhone,
+          email: email.trim() || `${cleanPhone}@pearlpick.in`,
+          password,
+          role: selectedPortal === 'DESIGNER' ? 'DESIGNER' : 'CUSTOMER',
+          city,
+          shopName: selectedPortal === 'DESIGNER' ? shopName : undefined,
+          specialties:
+            selectedPortal === 'DESIGNER'
+              ? specialization.split(',').map((s) => s.trim()).filter(Boolean)
+              : undefined,
+          experienceYears: selectedPortal === 'DESIGNER' ? Number(experienceYears) : undefined,
+          pricingRange: selectedPortal === 'DESIGNER' ? pricingRange : undefined,
+          portfolioUrl: selectedPortal === 'DESIGNER' ? portfolioUrl : undefined,
+          verificationId: selectedPortal === 'DESIGNER' ? verificationId : undefined
+        });
+        setCsrfToken(data.csrfToken);
+        setIsLoading(false);
+        onLoginSuccess(data.user, data.designerProfile);
+        onClose();
+      }
+    } catch (err: any) {
       setIsLoading(false);
-
-      if (!res.ok) {
-        setErrorMessage(data.error || 'Authentication failed. Please check your credentials.');
-        return;
-      }
-
-      if (data.token) {
-        try {
-          localStorage.setItem('pearl_pick_session_token', data.token);
-          localStorage.setItem('pearl_pick_session_user', JSON.stringify(data.user));
-        } catch {}
-      }
-
-      let createdTailor: TailorProfile | undefined;
-      if (data.designerApplication) {
-        createdTailor = {
-          id: data.designerApplication.id,
-          userId: data.designerApplication.userId,
-          name: data.designerApplication.name,
-          shopName: data.designerApplication.shopName,
-          avatar: data.user.avatar,
-          coverImage: portfolioUrl,
-          city: data.designerApplication.city,
-          state: data.designerApplication.state || 'Maharashtra',
-          country: 'India',
-          experienceYears: data.designerApplication.experienceYears,
-          verificationStatus: 'PENDING',
-          rating: 4.8,
-          reviewCount: 1,
-          completedOrders: 0,
-          specialties: data.designerApplication.specialties,
-          bio: `Bespoke designer studio specializing in ${specialization}.`,
-          badge: 'Couturier',
-          startingPrice: 8500,
-          pricingRange,
-          averageTurnaroundDays: 14,
-          portfolio: [
-            {
-              id: `port-${Date.now()}`,
-              title: 'Signature Bridal & Couture Piece',
-              category: 'Bridal Couture',
-              imageUrl: portfolioUrl,
-              completionTimeDays: 14,
-              price: 24000,
-              description: specialization,
-              customerRating: 5.0,
-            },
-          ],
-          shopAddress: city,
-          phone: data.user.phone,
-          equipment: ['Industrial Juki Lockstitch', 'Hand Zardozi Adda Frame'],
-          certifications: [verificationId],
-        };
-      }
-
-      onLoginSuccess(data.user, createdTailor);
-      onClose();
-    } catch {
-      setIsLoading(false);
-      const fallback =
-        DEMO_USERS.find((u) => u.role === selectedPortal) || DEMO_USERS[0];
-      onLoginSuccess(fallback);
-      onClose();
+      setErrorMessage(err?.message || 'Authentication failed. Please check your credentials.');
     }
   };
 
   const cardContent = (
     <div className="w-full max-w-md bg-white rounded-2xl border border-[#ECE6DE] shadow-2xl overflow-hidden text-[#2D2825]">
-      {/* Top Promotional / Portal Banner */}
-      {selectedPortal === 'customer' ? (
+      {/* Top Portal Banner */}
+      {selectedPortal === 'CUSTOMER' ? (
         <div className="relative bg-[#FAF7F2] border-b border-[#ECE6DE] px-6 py-5 flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8D2434] block">
               PEARL PICK ACCOUNT
             </span>
             <h2 className="font-serif text-xl font-bold text-[#2D2825] mt-0.5">
-              {mode === 'login' ? 'Login or Sign Up' : 'Create Customer Account'}
+              {mode === 'login' ? 'Customer Sign In' : 'Create Customer Account'}
             </h2>
             <p className="text-xs text-[#7D726A] mt-0.5">
               Save AI dress designs, manage wishlist & track custom orders
@@ -316,18 +200,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           )}
         </div>
-      ) : selectedPortal === 'tailor' ? (
+      ) : selectedPortal === 'DESIGNER' ? (
         <div className="bg-[#2D2825] text-white px-6 py-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
               <Scissors className="w-3.5 h-3.5" />
-              <span>Designer & Tailor Seller Portal (/designer/login)</span>
+              <span>
+                Designer & Tailor Portal ({mode === 'signup' ? '/designer/register' : '/designer/login'})
+              </span>
             </div>
             <h2 className="font-serif text-xl font-bold text-white mt-1">
-              {mode === 'login' ? 'Designer Partner Login' : 'Apply as a Verified Designer'}
+              {mode === 'login' ? 'Designer Partner Login' : 'Register as a Designer'}
             </h2>
             <p className="text-xs text-white/75 mt-0.5">
-              Manage collections, respond to custom dress requests & negotiate quotes
+              New designer accounts receive PENDING status until verified by Admin
             </p>
           </div>
           {!isFullPagePortal && (
@@ -351,7 +237,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               Authorized Admin Sign In
             </h2>
             <p className="text-xs text-white/80 mt-0.5">
-              Restricted to platform governance & designer verification officers
+              Restricted to server-provisioned administrator accounts
             </p>
           </div>
           {!isFullPagePortal && (
@@ -382,58 +268,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* Mode Switcher (Login vs Sign Up) — Hidden for Admin */}
-        {selectedPortal !== 'admin' && (
+        {/* Mode Switcher (Login vs Sign Up) — Strictly Hidden for Admin */}
+        {selectedPortal !== 'ADMIN' && (
           <div className="flex items-center p-1 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE] text-xs font-bold">
             <button
               type="button"
-              onClick={() => {
-                setMode('login');
-                setErrorMessage('');
-              }}
+              onClick={() => handleModeSwitch('login')}
               className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
                 mode === 'login'
                   ? 'bg-white text-[#2D2825] shadow-2xs'
                   : 'text-[#7D726A] hover:text-[#2D2825]'
               }`}
             >
-              {selectedPortal === 'tailor' ? 'Designer Login' : 'Existing Customer Login'}
+              {selectedPortal === 'DESIGNER' ? 'Designer Login' : 'Customer Login'}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setMode('signup');
-                setErrorMessage('');
-              }}
+              onClick={() => handleModeSwitch('signup')}
               className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
                 mode === 'signup'
                   ? 'bg-[#2D2825] text-white shadow-2xs'
                   : 'text-[#7D726A] hover:text-[#2D2825]'
               }`}
             >
-              {selectedPortal === 'tailor' ? 'Submit Designer Application' : 'New Customer Sign Up'}
+              {selectedPortal === 'DESIGNER' ? 'Designer Registration' : 'New Customer Sign Up'}
             </button>
           </div>
         )}
 
-        {/* CUSTOMER LOGIN METHOD TOGGLE: OTP vs PASSWORD (like Myntra) */}
-        {selectedPortal === 'customer' && mode === 'login' && (
+        {/* CUSTOMER LOGIN METHOD TOGGLE: PASSWORD vs DISABLED OTP NOTICE */}
+        {selectedPortal === 'CUSTOMER' && mode === 'login' && (
           <div className="flex items-center gap-4 border-b border-[#ECE6DE] pb-2 text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('otp');
-                setErrorMessage('');
-              }}
-              className={`pb-1.5 font-bold flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
-                loginMethod === 'otp'
-                  ? 'border-[#8D2434] text-[#8D2434]'
-                  : 'border-transparent text-[#7D726A] hover:text-[#2D2825]'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Login with Mobile OTP</span>
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -447,74 +312,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }`}
             >
               <Mail className="w-3.5 h-3.5" />
-              <span>Email / Password</span>
+              <span>Email / Mobile + Password</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('otp');
+                setErrorMessage('');
+              }}
+              className={`pb-1.5 font-bold flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
+                loginMethod === 'otp'
+                  ? 'border-[#8D2434] text-[#8D2434]'
+                  : 'border-transparent text-[#7D726A] hover:text-[#2D2825]'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Mobile OTP (Unavailable)</span>
             </button>
           </div>
         )}
 
-        {/* OTP LOGIN FLOW (Customer) */}
-        {selectedPortal === 'customer' && mode === 'login' && loginMethod === 'otp' ? (
-          <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#6E6359] mb-1.5">
-                Mobile Number
-              </label>
-              <div className="flex items-center rounded-xl border border-[#D6C7B8] bg-white overflow-hidden focus-within:border-[#8D2434]">
-                <span className="px-3 py-2.5 bg-[#FAF7F2] text-xs font-bold text-[#6E6359] border-r border-[#ECE6DE]">
-                  +91
-                </span>
-                <input
-                  type="tel"
-                  value={mobileOrEmail}
-                  onChange={(e) => {
-                    setMobileOrEmail(e.target.value);
-                    setOtpSent(false);
-                  }}
-                  placeholder="Enter 10-digit mobile number"
-                  className="w-full px-3 py-2.5 text-sm text-[#2D2825] focus:outline-none"
-                  required
-                />
+        {selectedPortal === 'CUSTOMER' && mode === 'login' && loginMethod === 'otp' ? (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">SMS OTP Delivery Not Configured</p>
+                <p className="mt-1 text-amber-900/90 leading-relaxed">
+                  Real SMS OTP delivery is not configured in this environment, so OTP login is disabled for security. Please sign in using your email or 10-digit mobile number and password.
+                </p>
               </div>
             </div>
-
-            {otpSent && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#6E6359]">
-                    Enter 4-Digit OTP
-                  </label>
-                  {otpHint && (
-                    <span className="text-[11px] text-[#8D2434] font-semibold">
-                      Demo OTP: {otpHint}
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value)}
-                  placeholder="4829"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#D6C7B8] text-sm font-bold tracking-[0.3em] text-center focus:outline-none focus:border-[#8D2434]"
-                  required
-                />
-              </div>
-            )}
-
             <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 rounded-xl bg-[#8D2434] hover:bg-[#731D2A] text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+              type="button"
+              onClick={() => setLoginMethod('password')}
+              className="w-full py-2.5 rounded-lg bg-[#2D2825] text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
             >
-              {isLoading
-                ? 'Please wait...'
-                : otpSent
-                ? 'Verify OTP & Continue Shopping'
-                : 'Continue with OTP'}
+              Switch to Password Login
             </button>
-          </form>
+          </div>
         ) : (
-          /* EMAIL / MOBILE + PASSWORD OR SIGNUP FORM */
           <form onSubmit={handlePasswordOrRegisterSubmit} className="space-y-3.5">
             {mode === 'signup' && (
               <>
@@ -527,7 +364,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder={
-                      selectedPortal === 'tailor' ? 'Master Karigar / Designer Name' : 'Your Full Name'
+                      selectedPortal === 'DESIGNER'
+                        ? 'Master Karigar / Designer Name'
+                        : 'Your Full Name'
                     }
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#D6C7B8] text-xs focus:outline-none focus:border-[#8D2434]"
                     required
@@ -558,7 +397,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="text"
                 value={mobileOrEmail}
                 onChange={(e) => setMobileOrEmail(e.target.value)}
-                placeholder="9820154321 or email@domain.com"
+                placeholder="email@domain.com or 10-digit mobile"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-[#D6C7B8] text-xs focus:outline-none focus:border-[#8D2434]"
                 required
               />
@@ -573,7 +412,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[#D6C7B8] text-xs focus:outline-none focus:border-[#8D2434]"
                   required
                 />
@@ -605,11 +444,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            {/* DESIGNER / TAILOR APPLICATION FIELDS */}
-            {selectedPortal === 'tailor' && mode === 'signup' && (
+            {/* DESIGNER APPLICATION FIELDS */}
+            {selectedPortal === 'DESIGNER' && mode === 'signup' && (
               <div className="p-3.5 rounded-xl bg-[#FAF7F2] border border-[#ECE6DE] space-y-3">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[#8D2434]">
-                  Atelier & Verification Details (Requires Admin Approval)
+                  Atelier & Verification Details (Assigned PENDING Until Admin Approval)
                 </p>
 
                 <div>
@@ -716,90 +555,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {isLoading
                   ? 'Authenticating...'
                   : mode === 'login'
-                  ? selectedPortal === 'admin'
+                  ? selectedPortal === 'ADMIN'
                     ? 'Sign In to Admin Portal'
-                    : selectedPortal === 'tailor'
+                    : selectedPortal === 'DESIGNER'
                     ? 'Sign In to Designer Portal'
                     : 'Sign In'
-                  : selectedPortal === 'tailor'
-                  ? 'Submit Application for Admin Approval'
+                  : selectedPortal === 'DESIGNER'
+                  ? 'Submit Application (Pending Approval)'
                   : 'Create Account & Continue'}
               </span>
             </button>
           </form>
         )}
 
-        {/* Quick Demo Credentials Helper for Immediate Testing */}
-        <div className="pt-3 border-t border-[#ECE6DE] space-y-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#7D726A]">
-            Instant Demo Fill ({selectedPortal === 'customer' ? 'Customer' : selectedPortal === 'tailor' ? 'Designer' : 'Admin'})
-          </p>
-          {selectedPortal === 'customer' && (
-            <button
-              type="button"
-              onClick={() => {
-                onLoginSuccess(DEMO_USERS[0]);
-                onClose();
-              }}
-              className="w-full py-2 px-3 rounded-lg bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-xs font-semibold text-[#2D2825] flex items-center justify-between cursor-pointer"
-            >
-              <span>One-Tap Sign In as Ananya Verma (Customer)</span>
-              <span className="text-[10px] font-bold text-[#8D2434]">Instant Login →</span>
-            </button>
-          )}
-
-          {selectedPortal === 'tailor' && (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onLoginSuccess(DEMO_USERS[1]);
-                  onClose();
-                }}
-                className="py-2 px-2.5 rounded-lg bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-[11px] font-semibold text-[#2D2825] text-left cursor-pointer"
-              >
-                <span className="block font-bold">Ustad Rafiq Ahmed</span>
-                <span className="text-[10px] text-emerald-700">Approved Designer →</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setStatusBanner('Fill application below to test Pending Admin Approval flow.');
-                }}
-                className="py-2 px-2.5 rounded-lg bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-[11px] font-semibold text-[#2D2825] text-left cursor-pointer"
-              >
-                <span className="block font-bold">New Applicant</span>
-                <span className="text-[10px] text-amber-700">Test Approval Gate →</span>
-              </button>
-            </div>
-          )}
-
-          {selectedPortal === 'admin' && (
-            <button
-              type="button"
-              onClick={() => {
-                onLoginSuccess(DEMO_USERS[2]);
-                onClose();
-              }}
-              className="w-full py-2 px-3 rounded-lg bg-[#FAF7F2] hover:bg-[#EFE9E2] border border-[#E4D9D1] text-xs font-semibold text-[#2D2825] flex items-center justify-between cursor-pointer"
-            >
-              <span>Authorize as Vikramaditya Rao (Admin Governance)</span>
-              <span className="text-[10px] font-bold text-[#8D2434]">Sign In →</span>
-            </button>
-          )}
-        </div>
-
         {/* Footer links for switching between Storefront and Seller Portal */}
         <div className="pt-2 border-t border-[#ECE6DE] flex items-center justify-between text-[11px] text-[#7D726A]">
-          {selectedPortal === 'customer' ? (
+          {selectedPortal === 'CUSTOMER' ? (
             <button
               type="button"
               onClick={() => {
                 if (onSwitchToDesignerPortal) {
                   onSwitchToDesignerPortal();
                 } else {
-                  setSelectedPortal('tailor');
+                  setSelectedPortal('DESIGNER');
                   setLoginMethod('password');
                 }
               }}
@@ -821,7 +599,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           )}
           <span className="flex items-center gap-1">
-            <Lock className="w-3 h-3" /> SSL Secured
+            <Lock className="w-3 h-3" /> HttpOnly Session
           </span>
         </div>
       </div>

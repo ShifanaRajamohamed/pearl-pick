@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { BellRing, X, CheckCircle2, Scissors, ShieldCheck, ArrowLeft, LogOut } from 'lucide-react';
 import { Navbar, StorefrontCategory } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -22,15 +22,16 @@ import { MarketplaceView } from './components/Customer/MarketplaceView';
 import { SearchModal } from './components/Customer/SearchModal';
 import { NotificationsModal } from './components/Customer/NotificationsModal';
 import { TailorDashboard } from './components/Tailor/TailorDashboard';
+import { DesignerApplicationWorkspace } from './components/Tailor/DesignerApplicationWorkspace';
 import { TailorVerificationModal } from './components/Tailor/TailorVerificationModal';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { SpecSheetExportModal } from './components/SpecSheetExportModal';
 import { AuthModal } from './components/Auth/AuthModal';
+import { RequireRole, RequireVerifiedDesigner } from './components/Auth/RouteGuards';
 import { UserProfileModal } from './components/Customer/UserProfileModal';
 import { UPIPaymentModal } from './components/Customer/UPIPaymentModal';
 import { FabricLibraryModal } from './components/Customer/FabricLibraryModal';
 import { CartCheckoutModal } from './components/Customer/CartCheckoutModal';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { ProductDetailModal } from './components/Customer/ProductDetailModal';
 import { ShoppingToast, ToastData } from './components/Customer/ShoppingToast';
 import { WishlistView } from './components/Customer/WishlistView';
@@ -61,36 +62,47 @@ import {
   ApprovalAuditLog,
   NegotiationOffer
 } from './types';
+import { normalizeRole, sanitizeReturnUrl } from './types/rbac';
 
 import {
   INITIAL_TAILORS,
   INITIAL_DRESS_DESIGNS,
-  INITIAL_QUOTATION_REQUESTS,
-  INITIAL_ORDERS,
   INITIAL_MEASUREMENTS,
   INITIAL_CUSTOMER_PROFILE,
   INITIAL_CHAT_MESSAGES,
   INITIAL_ANALYTICS,
-  DEMO_USERS,
   MARKETPLACE_PRODUCTS,
   INITIAL_NOTIFICATIONS
 } from './data/mockData';
-import { offlineSyncManager } from './services/offlineSync';
+import { apiClient } from './services/apiClient';
 import { pushNotificationService, DevicePushNotification } from './services/pushNotificationService';
 
 type PortalMode = 'storefront' | 'designer' | 'admin';
 
-function resolveInitialPortal(): PortalMode {
-  const path = window.location.pathname.toLowerCase();
-  if (path.startsWith('/designer')) return 'designer';
-  if (path.startsWith('/admin')) return 'admin';
-  return 'storefront';
+function resolveRouteStateFromPath(pathname: string): {
+  portal: PortalMode;
+  tab?: string;
+} {
+  const path = pathname.toLowerCase();
+  if (path.startsWith('/designer')) return { portal: 'designer' };
+  if (path.startsWith('/admin')) return { portal: 'admin' };
+  if (path === '/orders') return { portal: 'storefront', tab: 'orders' };
+  if (path === '/quotes') return { portal: 'storefront', tab: 'quotes' };
+  if (path === '/wardrobe') return { portal: 'storefront', tab: 'wardrobe' };
+  if (path === '/profile') return { portal: 'storefront', tab: 'profile' };
+  if (path === '/wishlist') return { portal: 'storefront', tab: 'wishlist' };
+  if (path === '/marketplace') return { portal: 'storefront', tab: 'marketplace' };
+  if (path === '/studio') return { portal: 'storefront', tab: 'generator' };
+  return { portal: 'storefront' };
 }
 
 export default function App() {
-  // Public Website by default — No user logged in initially
+  // Server-Validated Authentication & RBAC Session State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [portalMode, setPortalMode] = useState<PortalMode>(resolveInitialPortal);
+  const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+  const [portalMode, setPortalMode] = useState<PortalMode>(
+    () => resolveRouteStateFromPath(window.location.pathname).portal
+  );
 
   // Auth & Checkout Modals
   const [customerAuthModalOpen, setCustomerAuthModalOpen] = useState<boolean>(false);
@@ -102,146 +114,68 @@ export default function App() {
     quote: TailorQuotation;
   } | null>(null);
 
-  // Pending action queued when an unauthenticated visitor clicks a protected action
+  // Pending action or return URL queued when an unauthenticated visitor requests a protected customer page/action
   const pendingAuthActionRef = useRef<((user: AuthUser) => void) | null>(null);
+  const pendingReturnTabRef = useRef<string | null>(null);
 
   // Storefront Navigation & Category State
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const [activeTab, setActiveTab] = useState<string>(
+    () => resolveRouteStateFromPath(window.location.pathname).tab || 'home'
+  );
   const [activeCategory, setActiveCategory] = useState<StorefrontCategory | undefined>(undefined);
   const [gender, setGender] = useState<'women' | 'men'>('women');
 
-  // Sync URL path changes (/designer/login, /admin/login, /)
-  useEffect(() => {
-    const handlePopState = () => {
-      setPortalMode(resolveInitialPortal());
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const navigateToPortal = (nextPortal: PortalMode) => {
-    setPortalMode(nextPortal);
-    try {
-      if (nextPortal === 'designer') {
-        window.history.pushState({}, '', '/designer/login');
-      } else if (nextPortal === 'admin') {
-        window.history.pushState({}, '', '/admin/login');
-      } else {
-        window.history.pushState({}, '', '/');
-      }
-    } catch {}
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // Protected action wrapper for Customer shopping & studio flows
-  const requireCustomerAuth = (action: (user: AuthUser) => void) => {
-    if (currentUser) {
-      action(currentUser);
-    } else {
-      pendingAuthActionRef.current = action;
-      setCustomerAuthModalOpen(true);
-    }
-  };
-
-  // Seed initial negotiation history so the multi-round bargaining workflow is inspectable
-  const seededQuotationRequests: QuotationRequest[] = INITIAL_QUOTATION_REQUESTS.map((req, rIdx) => {
-    if (rIdx !== 0) return req;
-    return {
-      ...req,
-      targetBudget: req.targetBudget || 4000,
-      quotations: req.quotations.map((q, qIdx) => {
-        if (qIdx !== 0) return q;
-        return {
-          ...q,
-          totalAmount: 4800,
-          customerAgreed: false,
-          designerAgreed: true,
-          negotiationHistory: [
-            {
-              id: 'neg-seed-1',
-              senderRole: 'customer',
-              senderName: req.customerName || 'Ananya Verma',
-              amount: 4000,
-              note: 'Customer initial target budget for custom Banarasi silk tailoring.',
-              isFinalOffer: false,
-              status: 'COUNTERED',
-              timestamp: '2026-08-18T09:15:00.000Z'
-            },
-            {
-              id: 'neg-seed-2',
-              senderRole: 'tailor',
-              senderName: q.tailorName,
-              amount: 5500,
-              note: 'Designer quotation including hand dabka zardozi border and pure silk lining.',
-              isFinalOffer: false,
-              status: 'COUNTERED',
-              timestamp: '2026-08-18T11:30:00.000Z'
-            },
-            {
-              id: 'neg-seed-3',
-              senderRole: 'customer',
-              senderName: req.customerName || 'Ananya Verma',
-              amount: 4500,
-              note: 'Customer counteroffer — can we simplify the back tassel detailing to fit ₹4,500?',
-              isFinalOffer: false,
-              status: 'COUNTERED',
-              timestamp: '2026-08-18T14:10:00.000Z'
-            },
-            {
-              id: 'neg-seed-4',
-              senderRole: 'tailor',
-              senderName: q.tailorName,
-              amount: 4800,
-              note: 'Designer final offer: ₹4,800 with full front & sleeve zardozi intact. Ready to begin.',
-              isFinalOffer: true,
-              status: 'PROPOSED',
-              timestamp: '2026-08-18T16:00:00.000Z'
-            }
-          ]
-        };
-      })
-    };
-  });
-
-  // Domain State
+  // Public & Role-Specific Domain State (Backed by Server SQLite Authority)
   const [designs, setDesigns] = useState<DressDesign[]>(INITIAL_DRESS_DESIGNS);
   const [activeDesign, setActiveDesign] = useState<DressDesign | null>(null);
-  const [tailors, setTailors] = useState<TailorProfile[]>(INITIAL_TAILORS);
-  const [activeTailorId, setActiveTailorId] = useState<string>(INITIAL_TAILORS[0].id);
-  const [selectedTailor, setSelectedTailor] = useState<TailorProfile | null>(null);
-  const [quotationRequests, setQuotationRequests] = useState<QuotationRequest[]>(seededQuotationRequests);
-  const [orders, setOrders] = useState<Order[]>(
-    INITIAL_ORDERS.map((o, idx) => ({
-      ...o,
-      designerOrderStatus: o.designerOrderStatus || (idx === 0 ? 'In Production' : 'Quality Check')
-    }))
+  const [tailors, setTailors] = useState<TailorProfile[]>(
+    INITIAL_TAILORS.filter((t) => t.verificationStatus === 'VERIFIED')
   );
+  const [ownDesignerProfile, setOwnDesignerProfile] = useState<TailorProfile | null>(null);
+  const [selectedTailor, setSelectedTailor] = useState<TailorProfile | null>(null);
+  const [quotationRequests, setQuotationRequests] = useState<QuotationRequest[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [measurements, setMeasurements] = useState<MeasurementSheet>(INITIAL_MEASUREMENTS);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(INITIAL_CUSTOMER_PROFILE);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [analytics, setAnalytics] = useState<AnalyticsSummary>(INITIAL_ANALYTICS);
+  const [adminUsers, setAdminUsers] = useState<AuthUser[]>([]);
 
   // Marketplace, Shopping Bag & Notifications State
+  // Note: localStorage is strictly restricted to non-sensitive UI preferences (recent views) and guest cart items.
   const [products, setProducts] = useState<MarketplaceProduct[]>(
-    MARKETPLACE_PRODUCTS.map((p) => ({
-      ...p,
-      moderationStatus: p.moderationStatus || 'APPROVED',
-      stockCount: p.stockCount ?? 5,
-      backImageUrl: p.backImageUrl || p.images?.[0],
-      sideImageUrl: p.sideImageUrl || p.images?.[0]
-    }))
+    MARKETPLACE_PRODUCTS.filter((p) => p.moderationStatus !== 'REMOVED' && p.moderationStatus !== 'FLAGGED')
   );
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    try {
+      const guestCart = localStorage.getItem('pearl_pick_guest_cart');
+      return guestCart ? JSON.parse(guestCart) : [];
+    } catch {
+      return [];
+    }
+  });
   const [wishlistProductIds, setWishlistProductIds] = useState<string[]>([]);
-  const [selectedMarketplaceProduct, setSelectedMarketplaceProduct] = useState<MarketplaceProduct | null>(null);
+  const [selectedMarketplaceProduct, setSelectedMarketplaceProduct] =
+    useState<MarketplaceProduct | null>(null);
   const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('pearl_pick_recent_views');
-      return stored ? JSON.parse(stored) : [MARKETPLACE_PRODUCTS[0]?.id, MARKETPLACE_PRODUCTS[1]?.id].filter(Boolean);
+      return stored
+        ? JSON.parse(stored)
+        : [MARKETPLACE_PRODUCTS[0]?.id, MARKETPLACE_PRODUCTS[1]?.id].filter(Boolean);
     } catch {
       return [MARKETPLACE_PRODUCTS[0]?.id, MARKETPLACE_PRODUCTS[1]?.id].filter(Boolean);
     }
   });
+
+  // Save guest cart to localStorage only when unauthenticated
+  useEffect(() => {
+    if (!currentUser) {
+      try {
+        localStorage.setItem('pearl_pick_guest_cart', JSON.stringify(cartItems));
+      } catch {}
+    }
+  }, [cartItems, currentUser]);
 
   const handleSelectProduct = (product: MarketplaceProduct | null) => {
     setSelectedMarketplaceProduct(product);
@@ -269,32 +203,14 @@ export default function App() {
 
   // Admin Governance State
   const [commissionRate, setCommissionRate] = useState<number>(8);
-  const [disputes, setDisputes] = useState<DisputeRecord[]>([
-    {
-      id: 'disp-101',
-      orderId: INITIAL_ORDERS[0]?.id || 'ord-8801',
-      orderNumber: INITIAL_ORDERS[0]?.orderNumber || 'ORD-8801',
-      customerName: 'Ananya Verma',
-      tailorName: 'Ustad Rafiq Ahmed',
-      reason: 'Sleeve embroidery shade slightly deeper gold than digital swatch.',
-      amountINR: 18500,
-      status: 'OPEN',
-      createdAt: '2026-08-19'
-    }
-  ]);
-  const [auditLogs, setAuditLogs] = useState<ApprovalAuditLog[]>([
-    {
-      id: 'log-1',
-      tailorId: 'tailor-1',
-      tailorName: 'Ustad Rafiq Ahmed',
-      action: 'APPROVED',
-      adminNote: 'Verified Master Artisan Card, GSTIN, and bridal zardozi portfolio.',
-      timestamp: '2026-08-10 11:20 AM'
-    }
-  ]);
+  const [disputes, setDisputes] = useState<DisputeRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<ApprovalAuditLog[]>([]);
 
   // Generator prefill state
-  const [generatorPrefill, setGeneratorPrefill] = useState<{ prompt?: string; dressType?: DressType }>({});
+  const [generatorPrefill, setGeneratorPrefill] = useState<{
+    prompt?: string;
+    dressType?: DressType;
+  }>({});
 
   // Modals State
   const [measurementsModalOpen, setMeasurementsModalOpen] = useState<boolean>(false);
@@ -303,14 +219,163 @@ export default function App() {
   const [specSheetOpen, setSpecSheetOpen] = useState<boolean>(false);
   const [specSheetVariation, setSpecSheetVariation] = useState<DressDesignVariation | null>(null);
   const [chatOpen, setChatOpen] = useState<boolean>(false);
-  const [activeChatRecipient, setActiveChatRecipient] = useState<{ id: string; name: string; avatar?: string }>({
+  const [activeChatRecipient, setActiveChatRecipient] = useState<{
+    id: string;
+    name: string;
+    avatar?: string;
+  }>({
     id: INITIAL_TAILORS[0].id,
     name: INITIAL_TAILORS[0].name,
     avatar: INITIAL_TAILORS[0].avatar
   });
   const [activePushBanner, setActivePushBanner] = useState<DevicePushNotification | null>(null);
 
-  const currentTailorProfile = tailors.find((t) => t.id === activeTailorId) || tailors[0];
+  // Sync URL path changes (/designer/login, /designer/register, /admin/login, /orders, /)
+  useEffect(() => {
+    const handlePopState = () => {
+      const resolved = resolveRouteStateFromPath(window.location.pathname);
+      setPortalMode(resolved.portal);
+      if (resolved.tab) {
+        setActiveTab(resolved.tab);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToPortal = useCallback((nextPortal: PortalMode, explicitPath?: string) => {
+    setPortalMode(nextPortal);
+    try {
+      if (explicitPath) {
+        window.history.pushState({}, '', sanitizeReturnUrl(explicitPath, nextPortal));
+      } else if (nextPortal === 'designer') {
+        window.history.pushState({}, '', '/designer/login');
+      } else if (nextPortal === 'admin') {
+        window.history.pushState({}, '', '/admin/login');
+      } else {
+        window.history.pushState({}, '', '/');
+      }
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // Load Public Catalog (Approved Products & Verified Designers)
+  const refreshPublicCatalog = useCallback(async () => {
+    try {
+      const catalog = await apiClient.getPublicCatalog();
+      if (catalog.products) setProducts(catalog.products);
+      if (catalog.designers) setTailors(catalog.designers);
+    } catch {
+      // Fallback to initial public catalog if offline
+    }
+  }, []);
+
+  // Load Role-Specific Workspace Data from Server
+  const hydrateRoleWorkspace = useCallback(async (user: AuthUser) => {
+    const role = normalizeRole(user.role);
+    if (role === 'CUSTOMER') {
+      try {
+        const data = await apiClient.getCustomerBootstrap();
+        setCustomerProfile({
+          ...INITIAL_CUSTOMER_PROFILE,
+          id: data.profile.id,
+          name: data.profile.name,
+          email: data.profile.email,
+          phone: data.profile.phone,
+          avatar: data.profile.avatar,
+          city: data.profile.city
+        });
+        if (data.measurements) setMeasurements(data.measurements);
+        if (data.designs && data.designs.length > 0) setDesigns(data.designs);
+        if (data.wishlistIds) setWishlistProductIds(data.wishlistIds);
+        if (data.cartItems && data.cartItems.length > 0) {
+          setCartItems(data.cartItems);
+        }
+        if (data.quotationRequests) setQuotationRequests(data.quotationRequests);
+        if (data.orders) setOrders(data.orders);
+        if (data.conversations) setChatMessages(data.conversations);
+      } catch (err) {
+        console.warn('Customer bootstrap error:', err);
+      }
+    } else if (role === 'DESIGNER') {
+      try {
+        const meData = await apiClient.getDesignerMe();
+        setOwnDesignerProfile(meData.profile);
+
+        if (
+          meData.profile.verificationStatus === 'VERIFIED' &&
+          meData.user.accountStatus === 'ACTIVE'
+        ) {
+          const ws = await apiClient.getVerifiedDesignerWorkspace();
+          setOwnDesignerProfile(ws.profile);
+          setProducts(ws.products);
+          setQuotationRequests(ws.incomingRequests);
+          setOrders(ws.activeOrders);
+          setChatMessages(ws.conversations);
+        } else {
+          // Ensure unverified/revoked designers do not retain protected workspace data in state
+          setQuotationRequests([]);
+          setOrders([]);
+        }
+      } catch (err) {
+        console.warn('Designer bootstrap error:', err);
+      }
+    } else if (role === 'ADMIN') {
+      try {
+        const adm = await apiClient.getAdminDashboard();
+        setTailors(adm.tailors);
+        setAdminUsers(adm.users);
+        setProducts(adm.products);
+        setOrders(adm.orders);
+        setDisputes(adm.disputes);
+        setAuditLogs(adm.auditLogs);
+        setCommissionRate(adm.commissionRate);
+      } catch (err) {
+        console.warn('Admin bootstrap error:', err);
+      }
+    }
+  }, []);
+
+  // Initial Session Verification on Mount (Prevents flashing unauthorized views)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setIsLoadingAuth(true);
+      await refreshPublicCatalog();
+      try {
+        const me = await apiClient.getMe();
+        if (!mounted) return;
+        setCurrentUser(me.user);
+        if (me.designerProfile) {
+          setOwnDesignerProfile(me.designerProfile);
+        }
+        await hydrateRoleWorkspace(me.user);
+      } catch {
+        if (!mounted) return;
+        setCurrentUser(null);
+      } finally {
+        if (mounted) {
+          setIsLoadingAuth(false);
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [hydrateRoleWorkspace, refreshPublicCatalog]);
+
+  // Protected action wrapper for Customer shopping & studio flows
+  const requireCustomerAuth = (action: (user: AuthUser) => void, returnTab?: string) => {
+    if (currentUser && normalizeRole(currentUser.role) === 'CUSTOMER') {
+      action(currentUser);
+    } else {
+      pendingAuthActionRef.current = action;
+      if (returnTab) {
+        pendingReturnTabRef.current = returnTab;
+      }
+      setCustomerAuthModalOpen(true);
+    }
+  };
 
   const handleGenderChange = (newGender: 'women' | 'men') => {
     setGender(newGender);
@@ -357,32 +422,27 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [activePushBanner]);
 
-  // Save snapshots for persistence
-  useEffect(() => {
-    offlineSyncManager.saveSnapshot('designs', designs);
-  }, [designs]);
-
-  useEffect(() => {
-    offlineSyncManager.saveSnapshot('orders', orders);
-  }, [orders]);
-
-  useEffect(() => {
-    offlineSyncManager.saveSnapshot('measurements', measurements);
-  }, [measurements]);
-
-  useEffect(() => {
-    offlineSyncManager.saveSnapshot('quotationRequests', quotationRequests);
-  }, [quotationRequests]);
-
   // Storefront Tab Navigation with Auth Guards for Personal Account Views
   const handleNavigateStorefrontTab = (tab: string) => {
     const protectedTabs = ['orders', 'profile', 'wardrobe', 'quotes'];
-    if (protectedTabs.includes(tab) && !currentUser) {
-      requireCustomerAuth(() => {
-        setActiveTab(tab);
-        if (tab !== 'design-viewer') setActiveDesign(null);
-      });
-      return;
+    if (protectedTabs.includes(tab)) {
+      if (!currentUser || normalizeRole(currentUser.role) !== 'CUSTOMER') {
+        requireCustomerAuth(() => {
+          setActiveTab(tab);
+          if (tab !== 'design-viewer') setActiveDesign(null);
+          try {
+            window.history.pushState({}, '', sanitizeReturnUrl(`/${tab}`, 'storefront'));
+          } catch {}
+        }, tab);
+        return;
+      }
+      try {
+        window.history.pushState({}, '', sanitizeReturnUrl(`/${tab}`, 'storefront'));
+      } catch {}
+    } else if (tab === 'home') {
+      try {
+        window.history.pushState({}, '', '/');
+      } catch {}
     }
     setActiveTab(tab);
     if (tab !== 'design-viewer') setActiveDesign(null);
@@ -396,73 +456,107 @@ export default function App() {
   };
 
   // Authentication Handlers
-  const handleLoginSuccess = (user: AuthUser, newTailorApplication?: TailorProfile) => {
+  const handleLoginSuccess = async (user: AuthUser, newTailorApplication?: TailorProfile) => {
+    setCurrentUser(user);
     if (newTailorApplication) {
-      setTailors((prev) => [newTailorApplication, ...prev]);
-      setActiveTailorId(newTailorApplication.id);
-    } else if (user.tailorProfileId) {
-      setActiveTailorId(user.tailorProfileId);
+      setOwnDesignerProfile(newTailorApplication);
     }
 
-    setCurrentUser(user);
+    await hydrateRoleWorkspace(user);
 
-    if (user.role === 'customer') {
-      setCustomerProfile((prev) => ({
-        ...prev,
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        avatar: user.avatar,
-        city: user.city
-      }));
+    const role = normalizeRole(user.role);
+    if (role === 'CUSTOMER') {
+      setPortalMode('storefront');
+      if (pendingReturnTabRef.current) {
+        const targetTab = pendingReturnTabRef.current;
+        pendingReturnTabRef.current = null;
+        setActiveTab(targetTab);
+        try {
+          window.history.pushState({}, '', sanitizeReturnUrl(`/${targetTab}`, 'storefront'));
+        } catch {}
+      } else {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const returnUrl = sanitizeReturnUrl(params.get('returnUrl'), 'storefront');
+          if (returnUrl !== '/') {
+            const resolved = resolveRouteStateFromPath(returnUrl);
+            if (resolved.tab) setActiveTab(resolved.tab);
+            window.history.pushState({}, '', returnUrl);
+          }
+        } catch {}
+      }
 
-      // If the customer had a pending action (e.g., Add to Bag, Save Design, Generate Dress, View Orders), resume it immediately!
       if (pendingAuthActionRef.current) {
         const queued = pendingAuthActionRef.current;
         pendingAuthActionRef.current = null;
         queued(user);
       }
-    } else if (user.role === 'tailor') {
-      navigateToPortal('designer');
-    } else if (user.role === 'admin') {
-      navigateToPortal('admin');
+    } else if (role === 'DESIGNER') {
+      navigateToPortal('designer', '/designer');
+    } else if (role === 'ADMIN') {
+      navigateToPortal('admin', '/admin');
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
+  const handleLogout = async () => {
     try {
-      localStorage.removeItem('pearl_pick_session_token');
-      localStorage.removeItem('pearl_pick_session_user');
+      await apiClient.logout();
     } catch {}
+    setCurrentUser(null);
+    setOwnDesignerProfile(null);
+    setQuotationRequests([]);
+    setOrders([]);
+    setWishlistProductIds([]);
+    await refreshPublicCatalog();
     if (portalMode !== 'storefront') {
-      navigateToPortal('storefront');
+      navigateToPortal('storefront', '/');
+    } else {
+      try {
+        window.history.pushState({}, '', '/');
+      } catch {}
     }
     setActiveTab('home');
   };
 
-  // Shopping Bag Handlers (Myntra / Amazon Smooth UX)
+  // Persist customer cart & wishlist to backend when logged in as CUSTOMER
+  const syncCustomerStateToServer = useCallback(
+    async (nextWishlist: string[], nextCart: CartItem[]) => {
+      if (currentUser && normalizeRole(currentUser.role) === 'CUSTOMER') {
+        try {
+          await Promise.all([
+            apiClient.saveCustomerWishlist(nextWishlist),
+            apiClient.saveCustomerCart(nextCart)
+          ]);
+        } catch (err) {
+          console.warn('Failed to persist customer state:', err);
+        }
+      }
+    },
+    [currentUser]
+  );
+
+  // Shopping Bag Handlers
   const handleAddToCart = (product: MarketplaceProduct, selectedSize: string = 'M') => {
     setCartItems((prev) => {
       const existing = prev.find(
         (item) => item.product.id === product.id && item.selectedSize === selectedSize
       );
-      if (existing) {
-        return prev.map((item) =>
-          item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [
-        ...prev,
-        {
-          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          product,
-          selectedSize,
-          quantity: 1,
-          addedAt: new Date().toISOString()
-        }
-      ];
+      const next = existing
+        ? prev.map((item) =>
+            item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item
+          )
+        : [
+            ...prev,
+            {
+              id: `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              product,
+              selectedSize,
+              quantity: 1,
+              addedAt: new Date().toISOString()
+            }
+          ];
+      void syncCustomerStateToServer(wishlistProductIds, next);
+      return next;
     });
 
     setShoppingToast({
@@ -476,23 +570,33 @@ export default function App() {
   };
 
   const handleUpdateCartQuantity = (cartItemId: string, delta: number) => {
-    setCartItems((prev) =>
-      prev
+    setCartItems((prev) => {
+      const next = prev
         .map((item) =>
           item.id === cartItemId ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item
         )
-        .filter((item) => item.quantity > 0)
-    );
+        .filter((item) => item.quantity > 0);
+      void syncCustomerStateToServer(wishlistProductIds, next);
+      return next;
+    });
   };
 
   const handleUpdateCartSize = (cartItemId: string, newSize: string) => {
-    setCartItems((prev) =>
-      prev.map((item) => (item.id === cartItemId ? { ...item, selectedSize: newSize } : item))
-    );
+    setCartItems((prev) => {
+      const next = prev.map((item) =>
+        item.id === cartItemId ? { ...item, selectedSize: newSize } : item
+      );
+      void syncCustomerStateToServer(wishlistProductIds, next);
+      return next;
+    });
   };
 
   const handleRemoveCartItem = (cartItemId: string) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== cartItemId));
+    setCartItems((prev) => {
+      const next = prev.filter((item) => item.id !== cartItemId);
+      void syncCustomerStateToServer(wishlistProductIds, next);
+      return next;
+    });
   };
 
   const handleCompleteCartCheckout = (
@@ -501,89 +605,110 @@ export default function App() {
     paymentMethod: string,
     transactionId: string
   ) => {
-    const itemsToProcess = items && items.length > 0 ? items : cartItems;
-    const newOrders: Order[] = itemsToProcess.map((item, idx) => ({
-      id: `ord-${Date.now().toString().slice(-5)}-${idx}`,
-      orderNumber: `ORD-${Date.now().toString().slice(-5)}${idx}`,
-      orderType: 'ready-to-wear',
-      customerId: customerProfile.id,
-      customerName: currentUser?.name || customerProfile.name,
-      tailorId: item.product.designerId || 'tailor-1',
-      tailorName: item.product.designerName,
-      tailorShopName: item.product.designerName,
-      tailorAvatar: item.product.designerAvatar || tailors[0].avatar,
-      totalAmount: item.product.price * item.quantity,
-      paidAmount: item.product.price * item.quantity,
-      currency: 'INR',
-      status: 'QUOTATION_ACCEPTED',
-      designerOrderStatus: 'In Production',
-      currentStage: 'FABRIC_SOURCING',
-      escrowStatus: 'SECURED_IN_ESCROW',
-      escrowVaultId: transactionId,
-      shippingAddress,
-      milestones: [
-        {
-          id: `ms-${Date.now()}-${idx}-1`,
-          orderId: `ord-${Date.now().toString().slice(-5)}-${idx}`,
-          stage: 'FABRIC_SOURCING',
-          title: `${item.product.title} (Size ${item.selectedSize} × ${item.quantity})`,
-          label: `${item.product.title} (Size ${item.selectedSize})`,
-          description: `Atelier finishing & steam pressing in ${item.product.fabric}`,
-          status: 'IN_PROGRESS'
-        },
-        {
-          id: `ms-${Date.now()}-${idx}-2`,
-          orderId: `ord-${Date.now().toString().slice(-5)}-${idx}`,
-          stage: 'QUALITY_INSPECTION',
-          title: 'Quality Check & Dispatch',
-          label: 'Quality Check & Dispatch',
-          description: `Shipping to: ${shippingAddress}`,
-          status: 'PENDING'
-        }
-      ],
-      estimatedDeliveryDate: '2026-09-25',
-      orderDate: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    }));
-
-    setOrders((prev) => [...newOrders, ...prev]);
-    setCartItems([]);
-    setCartModalOpen(false);
-    setActiveTab('orders');
-    setShoppingToast({
-      message: `🎉 Order Confirmed! ${newOrders.length} couture piece(s) placed. Tracking live.`,
-      productTitle: newOrders[0]?.marketplaceItem?.title || 'Couture Order',
-      actionLabel: 'VIEW ORDER',
-      onAction: () => setActiveTab('orders')
-    });
+    requireCustomerAuth(async () => {
+      const itemsToProcess = items && items.length > 0 ? items : cartItems;
+      try {
+        const res = await apiClient.createCustomerOrder({
+          orderType: 'ready-to-wear',
+          items: itemsToProcess,
+          shippingAddress,
+          paymentMethod,
+          transactionId
+        });
+        setOrders((prev) => [...res.orders, ...prev]);
+        setCartItems([]);
+        setCartModalOpen(false);
+        setActiveTab('orders');
+        setShoppingToast({
+          message: `Order Confirmed! ${res.orders.length} couture piece(s) placed. Tracking live.`,
+          productTitle: res.orders[0]?.marketplaceItem?.title || 'Couture Order',
+          actionLabel: 'VIEW ORDER',
+          onAction: () => setActiveTab('orders')
+        });
+      } catch (err: any) {
+        setShoppingToast({
+          message: err?.message || 'Unable to complete checkout. Please sign in as a customer.',
+          productTitle: 'Checkout Notice'
+        });
+      }
+    }, 'orders');
   };
 
-  // Handlers for AI Dress Studio & Custom Ordering (Protected on generate/save/order)
-  const handleDesignGenerated = (newDesign: DressDesign) => {
-    requireCustomerAuth(() => {
-      setDesigns((prev) => [newDesign, ...prev]);
-      setActiveDesign(newDesign);
-      setActiveTab('design-viewer');
-      setAnalytics((prev) => ({
-        ...prev,
-        totalDressDesignsGenerated: prev.totalDressDesignsGenerated + 1
-      }));
-      offlineSyncManager.enqueue('DESIGN_SAVED', `Couture: ${newDesign.title}`, newDesign);
+  // Handlers for AI Dress Studio & Custom Ordering (Protected on save/request)
+  const handleDesignGenerated = async (newDesign: DressDesign) => {
+    setDesigns((prev) => [newDesign, ...prev.filter((d) => d.id !== newDesign.id)]);
+    setActiveDesign(newDesign);
+    setActiveTab('design-viewer');
+
+    if (currentUser && currentUser.role === 'CUSTOMER') {
+      try {
+        const res = await apiClient.saveCustomerDesign(newDesign);
+        setDesigns((prev) => [res.design, ...prev.filter((d) => d.id !== newDesign.id && d.id !== res.design.id)]);
+        setActiveDesign(res.design);
+      } catch {
+        // Keep local activeDesign in state if server persistence fails
+      }
+    }
+  };
+
+  const handleSaveUpdatedDesign = async (updatedDesign: DressDesign) => {
+    setDesigns((prev) => {
+      const exists = prev.some((d) => d.id === updatedDesign.id);
+      return exists ? prev.map((d) => (d.id === updatedDesign.id ? updatedDesign : d)) : [updatedDesign, ...prev];
     });
+    setActiveDesign(updatedDesign);
+
+    if (currentUser && currentUser.role === 'CUSTOMER') {
+      try {
+        const res = await apiClient.saveCustomerDesign(updatedDesign);
+        setDesigns((prev) => prev.map((d) => (d.id === updatedDesign.id ? res.design : d)));
+        setActiveDesign(res.design);
+      } catch {}
+    }
   };
 
   const handleToggleFavorite = (designId: string) => {
-    requireCustomerAuth(() => {
-      setDesigns((prev) =>
-        prev.map((d) => (d.id === designId ? { ...d, isFavorite: !d.isFavorite } : d))
-      );
-      if (activeDesign && activeDesign.id === designId) {
-        setActiveDesign({ ...activeDesign, isFavorite: !activeDesign.isFavorite });
+    requireCustomerAuth(async () => {
+      const targetDesign =
+        designs.find((d) => d.id === designId) ||
+        (activeDesign && activeDesign.id === designId ? activeDesign : null);
+      try {
+        const res = await apiClient.toggleCustomerDesignFavorite(designId);
+        setDesigns((prev) => prev.map((d) => (d.id === designId ? res.design : d)));
+        if (activeDesign && activeDesign.id === designId) {
+          setActiveDesign(res.design);
+        }
+      } catch {
+        // If design was generated as guest before login, save it to the customer's wardrobe first
+        if (targetDesign) {
+          try {
+            const saved = await apiClient.saveCustomerDesign({
+              ...targetDesign,
+              isFavorite: !targetDesign.isFavorite
+            });
+            setDesigns((prev) => {
+              const exists = prev.some((d) => d.id === designId);
+              return exists
+                ? prev.map((d) => (d.id === designId ? saved.design : d))
+                : [saved.design, ...prev];
+            });
+            if (activeDesign && activeDesign.id === designId) {
+              setActiveDesign(saved.design);
+            }
+            return;
+          } catch {}
+        }
+        setDesigns((prev) =>
+          prev.map((d) => (d.id === designId ? { ...d, isFavorite: !d.isFavorite } : d))
+        );
       }
     });
   };
 
-  const handleDeleteDesign = (designId: string) => {
+  const handleDeleteDesign = async (designId: string) => {
+    try {
+      await apiClient.deleteCustomerDesign(designId);
+    } catch {}
     setDesigns((prev) => prev.filter((d) => d.id !== designId));
     if (activeDesign?.id === designId) {
       setActiveDesign(null);
@@ -600,91 +725,31 @@ export default function App() {
     preferredTailorId?: string,
     selectedStandardSize?: string
   ) => {
-    requireCustomerAuth((authedUser) => {
-      const chosenTailor = tailors.find((t) => t.id === preferredTailorId) || tailors[0];
-      const reqId = `req-${Date.now()}`;
-      const initialDesignerQuoteAmount = Math.round(targetBudget * 1.15);
-
-      const newRequest: QuotationRequest = {
-        id: reqId,
-        customerId: authedUser.id,
-        customerName: authedUser.name,
-        customerAvatar: authedUser.avatar,
-        designId: design.id,
-        variation: variation,
-        measurementsId: measurements.id,
-        selectedStandardSize,
-        preferredTailorId: chosenTailor.id,
-        preferredTailorName: chosenTailor.name,
-        targetBudget,
-        neededByDate,
-        specificInstructions,
-        createdAt: new Date().toISOString(),
-        status: 'NEGOTIATING',
-        quotations: [
-          {
-            id: `quote-${Date.now()}-1`,
-            requestId: reqId,
-            tailorId: chosenTailor.id,
-            tailorName: chosenTailor.name,
-            tailorShopName: chosenTailor.shopName,
-            tailorAvatar: chosenTailor.avatar,
-            tailorRating: chosenTailor.rating,
-            totalAmount: initialDesignerQuoteAmount,
-            currency: 'INR',
-            estimatedDeliveryDays: 14,
-            proposedDeliveryDate: neededByDate,
-            tailorMessage: `We have reviewed your 3-view Front, Back & Side specifications for ${variation.name}. Our quotation includes hand-selected ${variation.specs.fabric} and bespoke finishing.`,
-            fabricIncluded: true,
-            status: 'NEGOTIATING',
-            customerAgreed: false,
-            designerAgreed: true,
-            negotiationHistory: [
-              {
-                id: `neg-${Date.now()}-1`,
-                senderRole: 'customer',
-                senderName: authedUser.name,
-                amount: targetBudget,
-                note: `Customer preferred budget (${selectedStandardSize ? `Size: ${selectedStandardSize}` : '14-Point Custom Fit'}).`,
-                isFinalOffer: false,
-                status: 'COUNTERED',
-                timestamp: new Date(Date.now() - 60000).toISOString()
-              },
-              {
-                id: `neg-${Date.now()}-2`,
-                senderRole: 'tailor',
-                senderName: chosenTailor.name,
-                amount: initialDesignerQuoteAmount,
-                note: `Initial quotation from ${chosenTailor.shopName} including pure ${variation.specs.fabric} & handwork.`,
-                isFinalOffer: false,
-                status: 'PROPOSED',
-                timestamp: new Date().toISOString()
-              }
-            ],
-            items: [
-              { id: 'item-1', description: `Pure ${variation.specs.fabric}`, amount: Math.round(initialDesignerQuoteAmount * 0.45), category: 'Fabric' },
-              { id: 'item-2', description: 'Master Pattern Drafting & Tailoring', amount: Math.round(initialDesignerQuoteAmount * 0.35), category: 'Stitching' },
-              { id: 'item-3', description: `Artisanal ${variation.specs.pattern}`, amount: Math.round(initialDesignerQuoteAmount * 0.15), category: 'Embroidery & Handwork' },
-              { id: 'item-4', description: 'Steam Pressing & Couture Packaging', amount: Math.round(initialDesignerQuoteAmount * 0.05), category: 'Finishing' }
-            ],
-            milestones: [
-              { title: 'Pattern Muslin & Fabric Sourced', percentage: 30, description: 'Fabric purchase & toile cut' },
-              { title: 'First Baste Fitting', percentage: 40, description: 'Baste fitting & adjustments' },
-              { title: 'Final Hand Finishing & Delivery', percentage: 30, description: 'Hand finishing and delivery' }
-            ],
-            createdAt: new Date().toISOString()
-          }
-        ]
-      };
-
-      setQuotationRequests((prev) => [newRequest, ...prev]);
-      setActiveTab('quotes');
-      offlineSyncManager.enqueue('QUOTE_REQUESTED', `Quotation broadcast for ${design.title}`, newRequest);
-    });
+    requireCustomerAuth(async () => {
+      try {
+        await apiClient.saveCustomerDesign(design).catch(() => {});
+        const res = await apiClient.createCustomerRequest({
+          designId: design.id,
+          variation,
+          selectedStandardSize,
+          preferredTailorId: preferredTailorId || tailors[0]?.id,
+          targetBudget,
+          neededByDate,
+          specificInstructions
+        });
+        setQuotationRequests((prev) => [res.quotationRequest, ...prev]);
+        setActiveTab('quotes');
+      } catch (err: any) {
+        setShoppingToast({
+          message: err?.message || 'Could not submit quotation request.',
+          productTitle: 'Custom Request'
+        });
+      }
+    }, 'quotes');
   };
 
-  // Multi-Round Price Negotiation Handlers
-  const handleSendCounterOffer = (
+  // Multi-Round Price Negotiation Handlers (Server-Enforced Ownership)
+  const handleSendCounterOffer = async (
     requestId: string,
     quoteId: string,
     amount: number,
@@ -692,71 +757,66 @@ export default function App() {
     senderRole: 'customer' | 'tailor',
     isFinalOffer?: boolean
   ) => {
-    setQuotationRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          status: 'NEGOTIATING',
-          quotations: req.quotations.map((q) => {
-            if (q.id !== quoteId) return q;
-            const newOffer: NegotiationOffer = {
-              id: `neg-${Date.now()}`,
-              senderRole,
-              senderName:
-                senderRole === 'customer'
-                  ? currentUser?.name || req.customerName || customerProfile.name
-                  : q.tailorName,
-              amount,
-              note,
-              isFinalOffer: Boolean(isFinalOffer),
-              status: 'PROPOSED',
-              timestamp: new Date().toISOString()
-            };
-            const updatedHistory = (q.negotiationHistory || []).map((h) => ({
-              ...h,
-              status: 'COUNTERED' as const
-            }));
-            return {
-              ...q,
-              totalAmount: amount,
-              status: 'NEGOTIATING',
-              customerAgreed: senderRole === 'customer',
-              designerAgreed: senderRole === 'tailor',
-              negotiationHistory: [...updatedHistory, newOffer]
-            };
-          })
-        };
-      })
-    );
+    try {
+      if (senderRole === 'customer') {
+        const res = await apiClient.negotiateCustomerRequest(requestId, {
+          quoteId,
+          action: 'counter',
+          amount,
+          note
+        });
+        setQuotationRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? res.quotationRequest : r))
+        );
+      } else {
+        const res = await apiClient.negotiateDesignerRequest(requestId, {
+          quoteId,
+          action: 'counter',
+          amount,
+          note,
+          isFinalOffer
+        });
+        setQuotationRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? res.quotationRequest : r))
+        );
+      }
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Failed to send counter-offer.',
+        productTitle: 'Negotiation'
+      });
+    }
   };
 
-  const handleAgreeToPrice = (requestId: string, quoteId: string, party: 'customer' | 'tailor') => {
-    setQuotationRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          quotations: req.quotations.map((q) => {
-            if (q.id !== quoteId) return q;
-            const nextCustomerAgreed = party === 'customer' ? true : Boolean(q.customerAgreed);
-            const nextDesignerAgreed = party === 'tailor' ? true : Boolean(q.designerAgreed);
-            const bothAgreed = nextCustomerAgreed && nextDesignerAgreed;
-            const updatedHistory = (q.negotiationHistory || []).map((h, idx, arr) =>
-              idx === arr.length - 1 ? { ...h, status: 'ACCEPTED' as const } : h
-            );
-            return {
-              ...q,
-              customerAgreed: nextCustomerAgreed,
-              designerAgreed: nextDesignerAgreed,
-              agreedAmount: bothAgreed ? q.totalAmount : q.agreedAmount,
-              status: bothAgreed ? 'MUTUALLY_AGREED' : q.status,
-              negotiationHistory: updatedHistory
-            };
-          })
-        };
-      })
-    );
+  const handleAgreeToPrice = async (
+    requestId: string,
+    quoteId: string,
+    party: 'customer' | 'tailor'
+  ) => {
+    try {
+      if (party === 'customer') {
+        const res = await apiClient.negotiateCustomerRequest(requestId, {
+          quoteId,
+          action: 'agree'
+        });
+        setQuotationRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? res.quotationRequest : r))
+        );
+      } else {
+        const res = await apiClient.negotiateDesignerRequest(requestId, {
+          quoteId,
+          action: 'agree'
+        });
+        setQuotationRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? res.quotationRequest : r))
+        );
+      }
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Failed to confirm price agreement.',
+        productTitle: 'Negotiation'
+      });
+    }
   };
 
   const handleUpdateRequestStatus = (
@@ -783,154 +843,93 @@ export default function App() {
     requireCustomerAuth(() => {
       setSelectedQuoteForPayment({ request, quote });
       setUpiModalOpen(true);
-    });
+    }, 'quotes');
   };
 
-  const handleCompleteEscrowPayment = (_method: string, txnId: string) => {
+  const handleCompleteEscrowPayment = async (method: string, txnId: string) => {
     if (!selectedQuoteForPayment) return;
     const { request, quote } = selectedQuoteForPayment;
-    const finalPrice = quote.agreedAmount || quote.totalAmount;
-
-    const newOrder: Order = {
-      id: `ord-${Date.now().toString().slice(-6)}`,
-      orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
-      orderType: 'tailor',
-      customerId: request.customerId,
-      customerName: request.customerName,
-      tailorId: quote.tailorId,
-      tailorName: quote.tailorName,
-      tailorShopName: quote.tailorShopName || 'Master Atelier',
-      tailorAvatar: quote.tailorAvatar,
-      design: request.variation,
-      variation: request.variation,
-      totalAmount: finalPrice,
-      paidAmount: finalPrice,
-      currency: quote.currency || 'INR',
-      status: 'QUOTATION_ACCEPTED',
-      designerOrderStatus: 'In Production',
-      currentStage: 'FABRIC_SOURCING',
-      escrowStatus: 'SECURED_IN_ESCROW',
-      escrowVaultId: txnId || `BHARAT-ESCROW-${Date.now().toString().slice(-6)}`,
-      milestones: quote.milestones.map((m, idx) => ({
-        id: `ms-${Date.now()}-${idx}`,
-        orderId: `ord-${Date.now().toString().slice(-6)}`,
-        stage: (idx === 0 ? 'FABRIC_SOURCING' : idx === 1 ? 'FIRST_FITTING' : 'FINAL_STITCHING') as any,
-        title: m.title,
-        label: m.title,
-        description: m.description,
-        status: idx === 0 ? 'IN_PROGRESS' : 'PENDING'
-      })),
-      estimatedDeliveryDate: quote.proposedDeliveryDate,
-      orderDate: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
-
-    setOrders([newOrder, ...orders]);
-    setQuotationRequests((prev) =>
-      prev.map((r) =>
-        r.id === request.id
-          ? {
-              ...r,
-              status: 'ACCEPTED',
-              acceptedQuoteId: quote.id
-            }
-          : r
-      )
-    );
-
-    setActiveTab('orders');
-    setSelectedQuoteForPayment(null);
-    setUpiModalOpen(false);
+    try {
+      const res = await apiClient.createCustomerOrder({
+        orderType: 'tailor',
+        requestId: request.id,
+        quoteId: quote.id,
+        paymentMethod: method,
+        transactionId: txnId
+      });
+      setOrders((prev) => [...res.orders, ...prev]);
+      setQuotationRequests((prev) =>
+        prev.map((r) =>
+          r.id === request.id
+            ? { ...r, status: 'ACCEPTED', acceptedQuoteId: quote.id }
+            : r
+        )
+      );
+      setActiveTab('orders');
+      setSelectedQuoteForPayment(null);
+      setUpiModalOpen(false);
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Payment verification failed.',
+        productTitle: 'Escrow Checkout'
+      });
+    }
   };
 
   // Enforced 7-Step Designer Order Status Transition Handler
-  const handleAdvanceOrderStatus = (orderId: string, nextStatus: DesignerOrderStatus) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          designerOrderStatus: nextStatus,
-          status:
-            nextStatus === 'Delivered'
-              ? 'DELIVERED'
-              : nextStatus === 'Shipped'
-              ? 'DISPATCHED'
-              : 'IN_PRODUCTION',
-          escrowStatus: nextStatus === 'Delivered' ? 'RELEASED' : o.escrowStatus
-        };
-      })
-    );
+  const handleAdvanceOrderStatus = async (orderId: string, nextStatus: DesignerOrderStatus) => {
+    try {
+      const res = await apiClient.advanceDesignerOrderStatus(orderId, nextStatus);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? res.order : o)));
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Unauthorized order status update.',
+        productTitle: 'Order Update'
+      });
+    }
   };
 
-  const handleAdvanceMilestone = (orderId: string, milestoneId: string, photoProofUrl?: string) => {
+  const handleAdvanceMilestone = async (
+    orderId: string,
+    milestoneId: string,
+    photoProofUrl?: string
+  ) => {
     const targetOrder = orders.find((o) => o.id === orderId);
     const targetMilestone = targetOrder?.milestones.find(
       (m, idx) => (m.id || m.stage || String(idx)) === milestoneId
     );
 
-    setOrders((prev) =>
-      prev.map((order) => {
-        if (order.id !== orderId) return order;
-
-        let nextPendingFound = false;
-        const updatedMilestones = order.milestones.map((m, idx) => {
-          const mKey = m.id || m.stage || String(idx);
-          if (mKey === milestoneId) {
-            const newPhoto: MilestoneProgressPhoto | null = photoProofUrl
-              ? {
-                  id: `pp-${Date.now()}`,
-                  url: photoProofUrl,
-                  caption: `Completed ${m.title || m.label || m.stage} — verified in atelier.`,
-                  uploadedAt: new Date().toISOString(),
-                  uploadedBy: order.tailorName,
-                  stageLabel: m.title || m.label || m.stage
-                }
-              : null;
-
-            return {
-              ...m,
-              status: 'COMPLETED' as const,
-              completed: true,
-              completedAt: new Date().toISOString(),
-              photoUrl: photoProofUrl || m.photoUrl,
-              photoProof: photoProofUrl || m.photoProof,
-              photoProofUrl: photoProofUrl || m.photoProofUrl,
-              progressPhotos: newPhoto
-                ? [...(m.progressPhotos || []), newPhoto]
-                : m.progressPhotos
-            };
-          }
-          if (m.status === 'PENDING' && !nextPendingFound) {
-            nextPendingFound = true;
-            return {
-              ...m,
-              status: 'IN_PROGRESS' as const
-            };
-          }
-          return m;
-        });
-
-        return {
-          ...order,
-          milestones: updatedMilestones
-        };
-      })
-    );
-
-    if (targetOrder) {
-      const milestoneTitle =
-        targetMilestone?.title || targetMilestone?.label || targetMilestone?.stage || 'First Fitting Complete';
-      pushNotificationService.sendMilestonePushNotification({
-        orderId: targetOrder.id,
-        orderNumber: targetOrder.orderNumber || targetOrder.id,
-        garmentTitle: targetOrder.variation?.name || targetOrder.design?.name || 'Bespoke Garment',
-        tailorName: targetOrder.tailorName,
-        tailorAvatar: targetOrder.tailorAvatar,
+    try {
+      const res = await apiClient.completeDesignerOrderMilestone(
+        orderId,
         milestoneId,
-        milestoneTitle,
-        status: 'COMPLETED',
-        photoUrl: photoProofUrl || targetMilestone?.photoUrl || targetMilestone?.photoProof
+        photoProofUrl
+      );
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? res.order : o)));
+
+      if (targetOrder) {
+        const milestoneTitle =
+          targetMilestone?.title ||
+          targetMilestone?.label ||
+          targetMilestone?.stage ||
+          'First Fitting Complete';
+        pushNotificationService.sendMilestonePushNotification({
+          orderId: targetOrder.id,
+          orderNumber: targetOrder.orderNumber || targetOrder.id,
+          garmentTitle:
+            targetOrder.variation?.name || targetOrder.design?.name || 'Bespoke Garment',
+          tailorName: targetOrder.tailorName,
+          tailorAvatar: targetOrder.tailorAvatar,
+          milestoneId,
+          milestoneTitle,
+          status: 'COMPLETED',
+          photoUrl: photoProofUrl || targetMilestone?.photoUrl || targetMilestone?.photoProof
+        });
+      }
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Unauthorized milestone update.',
+        productTitle: 'Production Proof'
       });
     }
   };
@@ -947,24 +946,19 @@ export default function App() {
       uploadedAt: new Date().toISOString()
     };
 
-    const targetOrder = orders.find((o) => o.id === orderId);
-
     setOrders((prev) =>
       prev.map((order) => {
         if (order.id !== orderId) return order;
-
         const updatedMilestones = order.milestones.map((m, idx) => {
           const mKey = m.id || m.stage || `ms-${idx}`;
           if (mKey !== milestoneId) return m;
-
           const nextStatus = markStatus || m.status || 'IN_PROGRESS';
           const isNowCompleted = nextStatus === 'COMPLETED' || m.completed;
-
           return {
             ...m,
             status: nextStatus,
             completed: isNowCompleted,
-            completedAt: isNowCompleted ? (m.completedAt || new Date().toISOString()) : m.completedAt,
+            completedAt: isNowCompleted ? m.completedAt || new Date().toISOString() : m.completedAt,
             photoUrl: createdPhoto.url,
             photoProof: createdPhoto.url,
             photoProofUrl: createdPhoto.url,
@@ -972,28 +966,9 @@ export default function App() {
             progressPhotos: [...(m.progressPhotos || []), createdPhoto]
           };
         });
-
-        return {
-          ...order,
-          milestones: updatedMilestones
-        };
+        return { ...order, milestones: updatedMilestones };
       })
     );
-
-    if (targetOrder) {
-      pushNotificationService.sendMilestonePushNotification({
-        orderId: targetOrder.id,
-        orderNumber: targetOrder.orderNumber || targetOrder.id,
-        garmentTitle: targetOrder.variation?.name || targetOrder.design?.name || 'Bespoke Garment',
-        tailorName: photo.uploadedBy || targetOrder.tailorName,
-        tailorAvatar: targetOrder.tailorAvatar,
-        milestoneId,
-        milestoneTitle: photo.stageLabel || 'Milestone Update',
-        status: markStatus || 'COMPLETED',
-        note: photo.caption,
-        photoUrl: createdPhoto.url
-      });
-    }
   };
 
   const handleRateOrderMilestone = (
@@ -1007,99 +982,65 @@ export default function App() {
         const updatedMilestones = order.milestones.map((m, idx) => {
           const mKey = m.id || m.stage || `ms-${idx}`;
           if (mKey !== milestoneId) return m;
-          return {
-            ...m,
-            customerRating: rating
-          };
+          return { ...m, customerRating: rating };
         });
-        return {
-          ...order,
-          milestones: updatedMilestones
-        };
+        return { ...order, milestones: updatedMilestones };
       })
     );
   };
 
   const handleSubmitReview = (
     orderId: string,
-    tailorId: string,
+    _tailorId: string,
     reviewData: Omit<Review, 'id' | 'createdAt'>
   ) => {
-    const newReview: Review = {
-      ...reviewData,
-      id: `rev-${Date.now()}`,
-      createdAt: new Date().toISOString()
-    };
-
-    const ratingVal = reviewData.overallRating || reviewData.ratingOverall || 5;
-
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === tailorId
-          ? {
-              ...t,
-              rating: Number(
-                (((t.rating * (t.reviewCount || 1)) + ratingVal) / ((t.reviewCount || 1) + 1)).toFixed(1)
-              ),
-              reviewCount: (t.reviewCount || 0) + 1,
-              reviews: [newReview, ...(t.reviews || [])]
-            }
-          : t
-      )
-    );
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status: 'DELIVERED',
-              designerOrderStatus: 'Delivered',
-              escrowStatus: 'RELEASED'
-            }
-          : o
-      )
-    );
+    requireCustomerAuth(async () => {
+      try {
+        const res = await apiClient.submitCustomerOrderReview(orderId, reviewData);
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? res.order : o)));
+        await refreshPublicCatalog();
+      } catch (err: any) {
+        setShoppingToast({
+          message: err?.message || 'Could not submit review.',
+          productTitle: 'Order Review'
+        });
+      }
+    }, 'orders');
   };
 
   const handleConfirmOrderDelivery = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status: 'DELIVERED',
-              designerOrderStatus: 'Delivered',
-              escrowStatus: 'RELEASED'
-            }
-          : o
-      )
-    );
+    requireCustomerAuth(async () => {
+      try {
+        const res = await apiClient.confirmCustomerOrderDelivery(orderId);
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? res.order : o)));
+      } catch (err: any) {
+        setShoppingToast({
+          message: err?.message || 'Could not confirm order delivery.',
+          productTitle: 'Order Delivery'
+        });
+      }
+    }, 'orders');
   };
 
-  const handleSendMessage = (
+  const handleSendMessage = async (
     content: string,
     type: 'TEXT' | 'IMAGE' | 'MEASUREMENT_CARD' | 'FABRIC_SWATCH' = 'TEXT'
   ) => {
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      orderId: orders[0]?.id || 'ord-1',
-      senderId:
-        portalMode === 'storefront'
-          ? currentUser?.id || customerProfile?.id || 'cust-1'
-          : activeChatRecipient?.id || 'tailor-1',
-      senderName:
-        portalMode === 'storefront'
-          ? currentUser?.name || customerProfile?.name || 'Customer'
-          : activeChatRecipient?.name || 'Master Tailor',
-      senderRole: portalMode === 'storefront' ? 'customer' : 'tailor',
-      text: content,
-      content,
-      type,
-      timestamp: new Date().toISOString(),
-      isRead: true
-    };
-    setChatMessages((prev) => [...prev, newMsg]);
+    if (!currentUser) {
+      setCustomerAuthModalOpen(true);
+      return;
+    }
+    try {
+      const res = await apiClient.sendMessage({
+        orderId: orders[0]?.id || 'ord-1',
+        recipientId: activeChatRecipient?.id || 'tailor-1',
+        content,
+        type
+      });
+      setChatMessages((prev) => [...prev, res.message]);
+    } catch {
+      // Fallback local echo if offline
+    }
   };
 
   const handleOpenChat = (recipientId: string, recipientName: string) => {
@@ -1113,36 +1054,29 @@ export default function App() {
   };
 
   const handleRequestSwatchFromLibrary = (fabric: HighEndFabric, customNote?: string) => {
-    requireCustomerAuth((authedUser) => {
+    requireCustomerAuth(async () => {
       const messageBody = customNote
         ? `Swatch Request for ${fabric.name} (${fabric.weightGsm} GSM) — "${customNote}"`
         : `Please share a physical feeler swatch & daylight macro video of ${fabric.name} (${fabric.weightGsm} GSM, ${fabric.colorTone}).`;
 
-      const swatchMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        orderId: orders[0]?.id || 'ord-8801',
-        senderId: authedUser.id,
-        senderName: authedUser.name,
-        senderRole: 'customer',
-        receiverId: activeChatRecipient?.id || 'tailor-1',
-        text: messageBody,
-        content: messageBody,
-        type: 'FABRIC_SWATCH',
-        attachmentType: 'swatch',
-        attachmentData: {
-          title: `${fabric.name} — ${fabric.colorTone}`,
-          hex: fabric.hex,
-          weight: `${fabric.weightGsm} GSM`,
-          composition: fabric.composition,
-          origin: fabric.origin,
-          imageUrl: fabric.imageUrl,
-          pricePerMeterINR: fabric.pricePerMeterINR
-        },
-        timestamp: new Date().toISOString(),
-        isRead: true
-      };
-
-      setChatMessages((prev) => [...prev, swatchMsg]);
+      try {
+        const res = await apiClient.sendMessage({
+          orderId: orders[0]?.id || 'ord-1',
+          recipientId: activeChatRecipient?.id || 'tailor-1',
+          content: messageBody,
+          type: 'FABRIC_SWATCH',
+          attachmentData: {
+            title: `${fabric.name} — ${fabric.colorTone}`,
+            hex: fabric.hex,
+            weight: `${fabric.weightGsm} GSM`,
+            composition: fabric.composition,
+            origin: fabric.origin,
+            imageUrl: fabric.imageUrl,
+            pricePerMeterINR: fabric.pricePerMeterINR
+          }
+        });
+        setChatMessages((prev) => [...prev, res.message]);
+      } catch {}
       setFabricLibraryOpen(false);
       setChatOpen(true);
     });
@@ -1153,169 +1087,220 @@ export default function App() {
     setSpecSheetOpen(true);
   };
 
-  // Designer Product Showcase CRUD
-  const handleAddProduct = (newProduct: Omit<MarketplaceProduct, 'id'>) => {
-    const created: MarketplaceProduct = {
-      ...newProduct,
-      id: `prod-${Date.now()}`
-    };
-    setProducts((prev) => [created, ...prev]);
+  // Designer Product Showcase CRUD (Verified Designers Only — Enforced on Server)
+  const handleAddProduct = async (newProduct: Omit<MarketplaceProduct, 'id'>) => {
+    try {
+      const res = await apiClient.createDesignerProduct(newProduct);
+      setProducts((prev) => [res.product, ...prev]);
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Only verified designers can publish products.',
+        productTitle: 'Product Showcase'
+      });
+    }
   };
 
-  const handleUpdateProduct = (updated: MarketplaceProduct) => {
-    setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  const handleUpdateProduct = async (updated: MarketplaceProduct) => {
+    try {
+      const res = await apiClient.updateDesignerProduct(updated.id, updated);
+      setProducts((prev) => prev.map((p) => (p.id === updated.id ? res.product : p)));
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Unable to update product.',
+        productTitle: 'Product Showcase'
+      });
+    }
   };
 
-  const handleDeleteProduct = (productId: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== productId));
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      await apiClient.deleteDesignerProduct(productId);
+      setProducts((prev) => prev.filter((p) => p.id !== productId));
+    } catch (err: any) {
+      setShoppingToast({
+        message: err?.message || 'Unable to delete product.',
+        productTitle: 'Product Showcase'
+      });
+    }
   };
 
-  const handleUpdateTailorProfile = (updated: TailorProfile) => {
-    setTailors((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+  const handleUpdateTailorProfile = async (updated: TailorProfile) => {
+    try {
+      const res = await apiClient.updateDesignerApplication({
+        shopName: updated.shopName,
+        city: updated.city,
+        state: updated.state,
+        experienceYears: updated.experienceYears,
+        specialties: updated.specialties,
+        bio: updated.bio,
+        pricingRange: updated.pricingRange,
+        startingPrice: updated.startingPrice,
+        portfolio: updated.portfolio
+      });
+      setOwnDesignerProfile(res.profile);
+    } catch {}
   };
 
-  const handleTailorSubmitKYC = (docs: TailorVerificationDocument[]) => {
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === currentTailorProfile.id
-          ? {
-              ...t,
-              verificationStatus: 'UNDER_REVIEW',
-              verificationDocuments: docs
-            }
-          : t
-      )
-    );
+  const handleTailorSubmitKYC = async (docs: TailorVerificationDocument[]) => {
+    try {
+      const res = await apiClient.updateDesignerApplication({
+        verificationDocuments: docs,
+        resubmit: true
+      });
+      setOwnDesignerProfile(res.profile);
+    } catch {}
   };
 
-  // Admin Governance Actions
-  const appendAuditLog = (
-    tailorId: string,
-    action: ApprovalAuditLog['action'],
-    adminNote: string
-  ) => {
-    const t = tailors.find((item) => item.id === tailorId);
-    setAuditLogs((prev) => [
-      {
-        id: `log-${Date.now()}`,
+  // Admin Governance Actions (Server-Enforced & Audited)
+  const handleApproveTailor = async (tailorId: string) => {
+    try {
+      const res = await apiClient.verifyAdminDesigner(
         tailorId,
-        tailorName: t?.name || 'Designer',
-        action,
-        adminNote,
-        timestamp: new Date().toLocaleString()
-      },
-      ...prev
-    ]);
+        'VERIFIED',
+        'Application, portfolio & verification approved by Admin.'
+      );
+      setTailors((prev) => prev.map((t) => (t.id === tailorId ? res.profile : t)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
-  const handleApproveTailor = (tailorId: string) => {
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === tailorId
-          ? {
-              ...t,
-              verificationStatus: 'VERIFIED',
-              badge: 'Master Atelier'
-            }
-          : t
-      )
-    );
-    appendAuditLog(tailorId, 'APPROVED', 'Application, portfolio & verification approved by Admin.');
-    setAnalytics((prev) => ({
-      ...prev,
-      verifiedTailorsCount: prev.verifiedTailorsCount + 1
-    }));
+  const handleRejectTailor = async (tailorId: string, reason: string) => {
+    try {
+      const res = await apiClient.verifyAdminDesigner(tailorId, 'REJECTED', reason);
+      setTailors((prev) => prev.map((t) => (t.id === tailorId ? res.profile : t)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
-  const handleRejectTailor = (tailorId: string, reason: string) => {
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === tailorId
-          ? {
-              ...t,
-              verificationStatus: 'REJECTED'
-            }
-          : t
-      )
-    );
-    appendAuditLog(tailorId, 'REJECTED', reason);
+  const handleRevokeTailor = async (tailorId: string, reason: string) => {
+    try {
+      const res = await apiClient.verifyAdminDesigner(tailorId, 'REVOKED', reason);
+      setTailors((prev) => prev.map((t) => (t.id === tailorId ? res.profile : t)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
-  const handleRequestTailorInfo = (tailorId: string, message: string) => {
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === tailorId
-          ? {
-              ...t,
-              verificationStatus: 'INFO_REQUESTED'
-            }
-          : t
-      )
-    );
-    appendAuditLog(tailorId, 'INFO_REQUESTED', message);
+  const handleRequestTailorInfo = async (tailorId: string, message: string) => {
+    try {
+      const res = await apiClient.verifyAdminDesigner(tailorId, 'PENDING', message);
+      setTailors((prev) => prev.map((t) => (t.id === tailorId ? res.profile : t)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
-  const handleToggleSuspendTailor = (tailorId: string) => {
+  const handleToggleSuspendTailor = async (tailorId: string) => {
     const target = tailors.find((t) => t.id === tailorId);
-    const willSuspend = target?.verificationStatus !== 'SUSPENDED';
-    setTailors((prev) =>
-      prev.map((t) =>
-        t.id === tailorId
-          ? {
-              ...t,
-              verificationStatus: willSuspend ? 'SUSPENDED' : 'VERIFIED'
-            }
-          : t
-      )
+    const matchingUser = adminUsers.find(
+      (u) => u.tailorProfileId === tailorId || u.id === tailorId
     );
-    appendAuditLog(
-      tailorId,
-      willSuspend ? 'SUSPENDED' : 'REACTIVATED',
-      willSuspend ? 'Account suspended by platform governance.' : 'Account reactivated.'
-    );
+    const userId = matchingUser?.id || tailorId;
+    const nextStatus = target?.accountStatus === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
+
+    try {
+      await apiClient.updateAdminUserStatus(
+        userId,
+        nextStatus,
+        nextStatus === 'SUSPENDED'
+          ? 'Designer account suspended by platform governance.'
+          : 'Designer account reactivated by platform governance.'
+      );
+      const adm = await apiClient.getAdminDashboard();
+      setTailors(adm.tailors);
+      setAdminUsers(adm.users);
+      setAuditLogs(adm.auditLogs);
+    } catch {}
   };
 
-  const handleModerateProduct = (productId: string, status: 'APPROVED' | 'FLAGGED' | 'REMOVED') => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, moderationStatus: status } : p))
-    );
+  const handleToggleSuspendUser = async (
+    userId: string,
+    currentStatus: 'ACTIVE' | 'SUSPENDED'
+  ) => {
+    const nextStatus = currentStatus === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
+    try {
+      await apiClient.updateAdminUserStatus(
+        userId,
+        nextStatus,
+        nextStatus === 'SUSPENDED'
+          ? 'Account suspended by platform administrator.'
+          : 'Account reactivated by platform administrator.'
+      );
+      const adm = await apiClient.getAdminDashboard();
+      setTailors(adm.tailors);
+      setAdminUsers(adm.users);
+      setAuditLogs(adm.auditLogs);
+    } catch {}
   };
 
-  const handleResolveDispute = (
+  const handleModerateProduct = async (
+    productId: string,
+    status: 'APPROVED' | 'FLAGGED' | 'REMOVED'
+  ) => {
+    try {
+      const res = await apiClient.moderateAdminProduct(
+        productId,
+        status,
+        `Product listing marked ${status} by admin.`
+      );
+      setProducts((prev) => prev.map((p) => (p.id === productId ? res.product : p)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
+  };
+
+  const handleResolveDispute = async (
     disputeId: string,
     resolution: 'RESOLVED_REFUND' | 'RESOLVED_RELEASE',
     note: string
   ) => {
-    setDisputes((prev) =>
-      prev.map((d) =>
-        d.id === disputeId ? { ...d, status: resolution, resolutionNote: note } : d
-      )
-    );
+    try {
+      const res = await apiClient.resolveAdminDispute(disputeId, resolution, note);
+      setDisputes((prev) => prev.map((d) => (d.id === disputeId ? res.dispute : d)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
-  const handleReleaseEscrow = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'RELEASED' } : o))
-    );
+  const handleReleaseEscrow = async (orderId: string) => {
+    try {
+      const res = await apiClient.releaseAdminOrderEscrow(
+        orderId,
+        'Escrow funds released by platform administrator.'
+      );
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? res.order : o)));
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
+  };
+
+  const handleUpdateCommissionRate = async (newRate: number) => {
+    try {
+      const res = await apiClient.updateAdminCommissionRate(
+        newRate,
+        `Updated marketplace commission fee to ${newRate}%.`
+      );
+      setCommissionRate(res.commissionRate);
+      setAuditLogs((prev) => [res.auditLog, ...prev]);
+    } catch {}
   };
 
   const handleSaveMeasurements = (newMeasurements: MeasurementSheet) => {
-    requireCustomerAuth(() => {
-      setMeasurements(newMeasurements);
-      offlineSyncManager.enqueue(
-        'MEASUREMENTS_UPDATED',
-        '14-Point Digital Measurement Sheet',
-        newMeasurements
-      );
+    requireCustomerAuth(async () => {
+      try {
+        const res = await apiClient.saveCustomerMeasurements(newMeasurements);
+        setMeasurements(res.measurements);
+      } catch {
+        setMeasurements(newMeasurements);
+      }
     });
   };
 
   const handleToggleWishlist = (productId: string) => {
     requireCustomerAuth(() => {
-      setWishlistProductIds((prev) =>
-        prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
-      );
-    });
+      setWishlistProductIds((prev) => {
+        const next = prev.includes(productId)
+          ? prev.filter((id) => id !== productId)
+          : [...prev, productId];
+        void syncCustomerStateToServer(next, cartItems);
+        return next;
+      });
+    }, 'wishlist');
   };
 
   const handleMarkNotificationAsRead = (notifId: string) => {
@@ -1349,240 +1334,261 @@ export default function App() {
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   // ============================================================================
-  // PORTAL 1: DEDICATED DESIGNER / TAILOR SELLER PORTAL (/designer/login)
+  // PORTAL 1: DEDICATED DESIGNER / TAILOR SELLER PORTAL (/designer/login, /designer/register, /designer)
   // ============================================================================
   if (portalMode === 'designer') {
-    const isDesignerAuthenticated = currentUser?.role === 'tailor';
+    const designerLoginFallback = (
+      <AuthModal
+        isOpen={true}
+        onClose={() => navigateToPortal('storefront', '/')}
+        onLoginSuccess={handleLoginSuccess}
+        initialRole="DESIGNER"
+        isFullPagePortal={true}
+        onBackToStorefront={() => navigateToPortal('storefront', '/')}
+      />
+    );
 
-    if (!isDesignerAuthenticated) {
-      return (
-        <AuthModal
-          isOpen={true}
-          onClose={() => navigateToPortal('storefront')}
-          onLoginSuccess={handleLoginSuccess}
-          initialRole="tailor"
-          isFullPagePortal={true}
-          onBackToStorefront={() => navigateToPortal('storefront')}
-        />
-      );
-    }
+    const activeDesignerProfile =
+      ownDesignerProfile ||
+      tailors.find((t) => t.id === currentUser?.tailorProfileId) ||
+      INITIAL_TAILORS[0];
 
     return (
-      <div className="min-h-screen bg-[#FAF7F2] text-[#2D2825] font-sans flex flex-col">
-        {/* Dedicated Seller Portal Top Bar */}
-        <header className="sticky top-0 z-40 bg-[#2D2825] text-white border-b border-white/10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center">
-                <Scissors className="w-4 h-4 text-[#D4AF37]" />
+      <RequireRole
+        user={currentUser}
+        isLoading={isLoadingAuth}
+        allowedRoles={['DESIGNER']}
+        unauthenticatedFallback={designerLoginFallback}
+        onReturnToStorefront={() => navigateToPortal('storefront', '/')}
+        onLogout={handleLogout}
+      >
+        <div className="min-h-screen bg-[#FAF7F2] text-[#2D2825] font-sans flex flex-col">
+          {/* Dedicated Seller Portal Top Bar */}
+          <header className="sticky top-0 z-40 bg-[#2D2825] text-white border-b border-white/10">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center">
+                  <Scissors className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <div>
+                  <span className="font-serif text-base font-bold tracking-tight block leading-none">
+                    PEARL PICK SELLER STUDIO
+                  </span>
+                  <span className="text-[10px] uppercase tracking-widest text-[#D4AF37] block mt-0.5">
+                    {activeDesignerProfile.verificationStatus === 'VERIFIED'
+                      ? 'Authorized Master Designer Workspace'
+                      : `Application Status: ${activeDesignerProfile.verificationStatus}`}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="font-serif text-base font-bold tracking-tight block leading-none">
-                  PEARL PICK SELLER STUDIO
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-[#D4AF37] block mt-0.5">
-                  Designer & Master Tailor Portal
-                </span>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigateToPortal('storefront', '/')}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>View Shopping Website</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
               </div>
             </div>
+          </header>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigateToPortal('storefront')}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>View Shopping Website</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
-        </header>
+          <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
+            <RequireVerifiedDesigner
+              user={currentUser}
+              designerProfile={activeDesignerProfile}
+              isLoading={isLoadingAuth}
+              unauthenticatedFallback={designerLoginFallback}
+              onReturnToStorefront={() => navigateToPortal('storefront', '/')}
+              onLogout={handleLogout}
+              unverifiedFallback={
+                <DesignerApplicationWorkspace
+                  designerProfile={activeDesignerProfile}
+                  onUpdateProfile={(updated) => setOwnDesignerProfile(updated)}
+                  onOpenKycModal={() => setTailorVerificationModalOpen(true)}
+                  onLogout={handleLogout}
+                />
+              }
+            >
+              <TailorDashboard
+                currentTailor={activeDesignerProfile}
+                incomingRequests={quotationRequests}
+                activeOrders={orders}
+                products={products}
+                onOpenVerificationModal={() => setTailorVerificationModalOpen(true)}
+                onSubmitQuote={async (requestId, quote) => {
+                  try {
+                    const res = await apiClient.submitDesignerQuote(requestId, quote);
+                    setQuotationRequests((prev) =>
+                      prev.map((r) => (r.id === requestId ? res.quotationRequest : r))
+                    );
+                  } catch (err: any) {
+                    setShoppingToast({
+                      message: err?.message || 'Only verified designers can submit quotes.',
+                      productTitle: 'Quotation Submission'
+                    });
+                  }
+                }}
+                onUpdateRequestStatus={handleUpdateRequestStatus}
+                onSendCounterOffer={(reqId, quoteId, amount, note, _role, isFinal) =>
+                  handleSendCounterOffer(reqId, quoteId, amount, note, 'tailor', isFinal)
+                }
+                onAgreeToPrice={(reqId, quoteId) => handleAgreeToPrice(reqId, quoteId, 'tailor')}
+                onAdvanceMilestone={handleAdvanceMilestone}
+                onAdvanceOrderStatus={handleAdvanceOrderStatus}
+                onOpenChat={handleOpenChat}
+                onAddProduct={handleAddProduct}
+                onUpdateProduct={handleUpdateProduct}
+                onDeleteProduct={handleDeleteProduct}
+                onUpdateTailorProfile={handleUpdateTailorProfile}
+              />
+            </RequireVerifiedDesigner>
+          </main>
 
-        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
-          <TailorDashboard
-            currentTailor={currentTailorProfile}
-            allTailors={tailors}
-            onSwitchTailor={(id) => setActiveTailorId(id)}
-            incomingRequests={quotationRequests}
-            activeOrders={orders}
-            products={products}
-            onOpenVerificationModal={() => setTailorVerificationModalOpen(true)}
-            onSubmitQuote={(requestId, quote) => {
-              setQuotationRequests((prev) =>
-                prev.map((r) =>
-                  r.id === requestId
-                    ? {
-                        ...r,
-                        status: 'NEGOTIATING',
-                        quotations: [
-                          {
-                            ...quote,
-                            id: `quote-${Date.now()}`,
-                            customerAgreed: false,
-                            designerAgreed: true,
-                            negotiationHistory: [
-                              {
-                                id: `neg-${Date.now()}-init`,
-                                senderRole: 'customer',
-                                senderName: r.customerName || 'Customer',
-                                amount: r.targetBudget,
-                                note: 'Initial customer budget',
-                                status: 'COUNTERED',
-                                timestamp: r.createdAt
-                              },
-                              {
-                                id: `neg-${Date.now()}-quote`,
-                                senderRole: 'tailor',
-                                senderName: quote.tailorName,
-                                amount: quote.totalAmount,
-                                note: quote.tailorMessage,
-                                status: 'PROPOSED',
-                                timestamp: new Date().toISOString()
-                              }
-                            ],
-                            createdAt: new Date().toISOString()
-                          },
-                          ...r.quotations
-                        ]
-                      }
-                    : r
-                )
-              );
-            }}
-            onUpdateRequestStatus={handleUpdateRequestStatus}
-            onSendCounterOffer={(reqId, quoteId, amount, note, isFinal) =>
-              handleSendCounterOffer(reqId, quoteId, amount, note, 'tailor', isFinal)
-            }
-            onAgreeToPrice={(reqId, quoteId) => handleAgreeToPrice(reqId, quoteId, 'tailor')}
-            onAdvanceMilestone={handleAdvanceMilestone}
-            onAdvanceOrderStatus={handleAdvanceOrderStatus}
-            onOpenChat={handleOpenChat}
-            onAddProduct={handleAddProduct}
-            onUpdateProduct={handleUpdateProduct}
-            onDeleteProduct={handleDeleteProduct}
-            onUpdateTailorProfile={handleUpdateTailorProfile}
+          <TailorVerificationModal
+            isOpen={tailorVerificationModalOpen}
+            onClose={() => setTailorVerificationModalOpen(false)}
+            onSubmitDocuments={handleTailorSubmitKYC}
           />
-        </main>
 
-        <TailorVerificationModal
-          isOpen={tailorVerificationModalOpen}
-          onClose={() => setTailorVerificationModalOpen(false)}
-          onSubmitDocuments={handleTailorSubmitKYC}
-        />
-
-        <StyleChatModal
-          isOpen={chatOpen}
-          onClose={() => setChatOpen(false)}
-          tailorName={activeChatRecipient?.name || 'Master Tailor'}
-          tailorAvatar={activeChatRecipient?.avatar}
-          customerName={customerProfile?.name || 'Customer'}
-          customerAvatar={customerProfile?.avatar}
-          measurements={measurements}
-          messages={chatMessages}
-          onSendMessage={handleSendMessage}
-          onOpenFabricLibrary={() => setFabricLibraryOpen(true)}
-        />
-      </div>
+          <StyleChatModal
+            isOpen={chatOpen}
+            onClose={() => setChatOpen(false)}
+            tailorName={activeDesignerProfile.name}
+            tailorAvatar={activeDesignerProfile.avatar}
+            customerName={activeChatRecipient?.name || 'Customer'}
+            customerAvatar={activeChatRecipient?.avatar}
+            measurements={measurements}
+            messages={chatMessages}
+            onSendMessage={handleSendMessage}
+            onOpenFabricLibrary={() => setFabricLibraryOpen(true)}
+          />
+        </div>
+      </RequireRole>
     );
   }
 
   // ============================================================================
-  // PORTAL 2: DEDICATED ADMIN GOVERNANCE PORTAL (/admin/login)
+  // PORTAL 2: DEDICATED ADMIN GOVERNANCE PORTAL (/admin/login, /admin/*)
   // ============================================================================
   if (portalMode === 'admin') {
-    const isAdminAuthenticated = currentUser?.role === 'admin';
-
-    if (!isAdminAuthenticated) {
-      return (
-        <AuthModal
-          isOpen={true}
-          onClose={() => navigateToPortal('storefront')}
-          onLoginSuccess={handleLoginSuccess}
-          initialRole="admin"
-          isFullPagePortal={true}
-          onBackToStorefront={() => navigateToPortal('storefront')}
-        />
-      );
-    }
+    const adminLoginFallback = (
+      <AuthModal
+        isOpen={true}
+        onClose={() => navigateToPortal('storefront', '/')}
+        onLoginSuccess={handleLoginSuccess}
+        initialRole="ADMIN"
+        isFullPagePortal={true}
+        onBackToStorefront={() => navigateToPortal('storefront', '/')}
+      />
+    );
 
     return (
-      <div className="min-h-screen bg-[#FAF7F2] text-[#2D2825] font-sans flex flex-col">
-        <header className="sticky top-0 z-40 bg-[#8D2434] text-white border-b border-white/15">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
-                <ShieldCheck className="w-4 h-4 text-white" />
+      <RequireRole
+        user={currentUser}
+        isLoading={isLoadingAuth}
+        allowedRoles={['ADMIN']}
+        unauthenticatedFallback={adminLoginFallback}
+        onReturnToStorefront={() => navigateToPortal('storefront', '/')}
+        onLogout={handleLogout}
+      >
+        <div className="min-h-screen bg-[#FAF7F2] text-[#2D2825] font-sans flex flex-col">
+          <header className="sticky top-0 z-40 bg-[#8D2434] text-white border-b border-white/15">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <span className="font-serif text-base font-bold tracking-tight block leading-none">
+                    PEARL PICK GOVERNANCE
+                  </span>
+                  <span className="text-[10px] uppercase tracking-widest text-white/80 block mt-0.5">
+                    Authorized Admin Console
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="font-serif text-base font-bold tracking-tight block leading-none">
-                  PEARL PICK GOVERNANCE
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-white/80 block mt-0.5">
-                  Authorized Admin Console
-                </span>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigateToPortal('storefront', '/')}
+                  className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>View Shopping Website</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 rounded-lg bg-black/30 hover:bg-black/45 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
               </div>
             </div>
+          </header>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigateToPortal('storefront')}
-                className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>View Shopping Website</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="px-3 py-1.5 rounded-lg bg-black/30 hover:bg-black/45 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
-          <AdminDashboard
-            tailors={tailors}
-            orders={orders}
-            products={products}
-            customers={DEMO_USERS}
-            disputes={disputes}
-            auditLogs={auditLogs}
-            commissionRate={commissionRate}
-            analytics={analytics}
-            onApproveTailor={handleApproveTailor}
-            onRejectTailor={handleRejectTailor}
-            onRequestTailorInfo={handleRequestTailorInfo}
-            onToggleSuspendTailor={handleToggleSuspendTailor}
-            onModerateProduct={handleModerateProduct}
-            onResolveDispute={handleResolveDispute}
-            onUpdateCommissionRate={setCommissionRate}
-            onReleaseEscrow={handleReleaseEscrow}
-          />
-        </main>
-      </div>
+          <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
+            <AdminDashboard
+              tailors={tailors}
+              orders={orders}
+              products={products}
+              customers={adminUsers}
+              disputes={disputes}
+              auditLogs={auditLogs}
+              commissionRate={commissionRate}
+              analytics={analytics}
+              onApproveTailor={handleApproveTailor}
+              onRejectTailor={handleRejectTailor}
+              onRevokeTailor={handleRevokeTailor}
+              onRequestTailorInfo={handleRequestTailorInfo}
+              onToggleSuspendTailor={handleToggleSuspendTailor}
+              onToggleSuspendUser={handleToggleSuspendUser}
+              onModerateProduct={handleModerateProduct}
+              onResolveDispute={handleResolveDispute}
+              onUpdateCommissionRate={handleUpdateCommissionRate}
+              onReleaseEscrow={handleReleaseEscrow}
+            />
+          </main>
+        </div>
+      </RequireRole>
     );
   }
 
   // ============================================================================
   // PORTAL 3: PUBLIC & CUSTOMER E-COMMERCE SHOPPING WEBSITE (/)
   // ============================================================================
+  const customerLoginFallback = (
+    <div className="max-w-md mx-auto my-12 bg-white rounded-3xl border border-[#E4D9D1] p-8 text-center space-y-4 shadow-xs">
+      <h2 className="font-serif text-2xl font-bold text-[#2D2825]">Customer Sign-In Required</h2>
+      <p className="text-xs text-[#7D726A] leading-relaxed">
+        Please sign in with a Customer account to access your saved designs, body measurements, custom quotations, and orders.
+      </p>
+      <button
+        type="button"
+        onClick={() => setCustomerAuthModalOpen(true)}
+        className="w-full py-3 rounded-xl bg-[#8D2434] hover:bg-[#701B28] text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
+      >
+        Sign In / Create Customer Account
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#2D2825] font-sans selection:bg-[#E9D4D7] selection:text-[#4A3728] flex flex-col justify-between">
-      {/* Myntra / Zara E-Commerce Top Navigation Bar */}
+      {/* Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={handleNavigateStorefrontTab}
@@ -1594,7 +1600,9 @@ export default function App() {
         activeOrdersCount={orders.filter((o) => o.status !== 'DELIVERED').length}
         wishlistCount={wishlistProductIds.length}
         cartCount={totalCartCount}
-        openMeasurements={() => setMeasurementsModalOpen(true)}
+        openMeasurements={() => {
+          requireCustomerAuth(() => setMeasurementsModalOpen(true));
+        }}
         openSearch={() => setSearchModalOpen(true)}
         openFabricLibrary={() => setFabricLibraryOpen(true)}
         openCart={() => setCartModalOpen(true)}
@@ -1617,7 +1625,9 @@ export default function App() {
               if (cat) handleSelectStorefrontCategory(cat);
               else setActiveTab('marketplace');
             }}
-            onOpenMeasurements={() => setMeasurementsModalOpen(true)}
+            onOpenMeasurements={() => {
+              requireCustomerAuth(() => setMeasurementsModalOpen(true));
+            }}
             onSelectDesign={(design) => {
               setActiveDesign(design);
               setActiveTab('design-viewer');
@@ -1636,9 +1646,11 @@ export default function App() {
             onOpenNotifications={() => setNotificationsModalOpen(true)}
             onOpenSearch={() => setSearchModalOpen(true)}
             featuredDesigns={designs}
-            tailors={tailors}
+            tailors={tailors.filter((t) => t.verificationStatus === 'VERIFIED')}
             verifiedTailors={tailors.filter((t) => t.verificationStatus === 'VERIFIED')}
-            products={products}
+            products={products.filter(
+              (p) => p.moderationStatus !== 'REMOVED' && p.moderationStatus !== 'FLAGGED'
+            )}
             wishlistIds={wishlistProductIds}
             onToggleWishlist={handleToggleWishlist}
             onAddToCart={handleAddToCart}
@@ -1756,12 +1768,16 @@ export default function App() {
         {activeTab === 'marketplace' && (
           <MarketplaceView
             gender={gender}
-            products={products}
+            onGenderChange={handleGenderChange}
+            activeStorefrontCategory={activeCategory}
+            products={products.filter(
+              (p) => p.moderationStatus !== 'REMOVED' && p.moderationStatus !== 'FLAGGED'
+            )}
             wishlistIds={wishlistProductIds}
             cartCount={totalCartCount}
             initialCategory={
               activeCategory === 'men'
-                ? "Men's Bespoke"
+                ? 'All'
                 : activeCategory === 'festive'
                 ? 'Festive'
                 : activeCategory === 'ethnic'
@@ -1818,7 +1834,10 @@ export default function App() {
                 setActiveTab('generator');
               }}
               onOpenSpecSheet={handleOpenSpecSheet}
-              onOpenMeasurements={() => setMeasurementsModalOpen(true)}
+              onOpenMeasurements={() => {
+                requireCustomerAuth(() => setMeasurementsModalOpen(true));
+              }}
+              onSaveUpdatedDesign={handleSaveUpdatedDesign}
             />
           ) : (
             <DesignGallery
@@ -1837,19 +1856,28 @@ export default function App() {
           ))}
 
         {activeTab === 'wardrobe' && (
-          <DesignGallery
-            designs={designs}
-            onSelectDesign={(design) => {
-              setActiveDesign(design);
-              setActiveTab('design-viewer');
-            }}
-            onDeleteDesign={handleDeleteDesign}
-            onToggleFavorite={handleToggleFavorite}
-            onStartNewDesign={() => {
-              setActiveDesign(null);
-              setActiveTab('generator');
-            }}
-          />
+          <RequireRole
+            user={currentUser}
+            isLoading={isLoadingAuth}
+            allowedRoles={['CUSTOMER']}
+            unauthenticatedFallback={customerLoginFallback}
+            onReturnToStorefront={() => setActiveTab('home')}
+            onLogout={handleLogout}
+          >
+            <DesignGallery
+              designs={designs}
+              onSelectDesign={(design) => {
+                setActiveDesign(design);
+                setActiveTab('design-viewer');
+              }}
+              onDeleteDesign={handleDeleteDesign}
+              onToggleFavorite={handleToggleFavorite}
+              onStartNewDesign={() => {
+                setActiveDesign(null);
+                setActiveTab('generator');
+              }}
+            />
+          </RequireRole>
         )}
 
         {activeTab === 'tailors' && (
@@ -1870,55 +1898,82 @@ export default function App() {
         )}
 
         {activeTab === 'quotes' && (
-          <QuotationComparison
-            quotationRequests={quotationRequests}
-            onAcceptQuotation={handleAcceptQuotation}
-            onSendCounterOffer={(reqId, quoteId, amount, note) =>
-              handleSendCounterOffer(reqId, quoteId, amount, note, 'customer', false)
-            }
-            onAgreeToPrice={(reqId, quoteId) => handleAgreeToPrice(reqId, quoteId, 'customer')}
-            onOpenChat={handleOpenChat}
-            onNavigateToStudio={() => setActiveTab('generator')}
-          />
+          <RequireRole
+            user={currentUser}
+            isLoading={isLoadingAuth}
+            allowedRoles={['CUSTOMER']}
+            unauthenticatedFallback={customerLoginFallback}
+            onReturnToStorefront={() => setActiveTab('home')}
+            onLogout={handleLogout}
+          >
+            <QuotationComparison
+              quotationRequests={quotationRequests}
+              onAcceptQuotation={handleAcceptQuotation}
+              onSendCounterOffer={(reqId, quoteId, amount, note) =>
+                handleSendCounterOffer(reqId, quoteId, amount, note, 'customer', false)
+              }
+              onAgreeToPrice={(reqId, quoteId) => handleAgreeToPrice(reqId, quoteId, 'customer')}
+              onOpenChat={handleOpenChat}
+              onNavigateToStudio={() => setActiveTab('generator')}
+            />
+          </RequireRole>
         )}
 
         {activeTab === 'orders' && (
-          <OrderTrackingView
-            orders={orders}
-            onOpenChat={handleOpenChat}
-            onSubmitReview={handleSubmitReview}
-            onConfirmDelivery={handleConfirmOrderDelivery}
-            onUploadMilestonePhoto={handleUploadMilestonePhoto}
-            onRateMilestone={handleRateOrderMilestone}
-            onOpenFabricLibrary={() => setFabricLibraryOpen(true)}
-          />
+          <RequireRole
+            user={currentUser}
+            isLoading={isLoadingAuth}
+            allowedRoles={['CUSTOMER']}
+            unauthenticatedFallback={customerLoginFallback}
+            onReturnToStorefront={() => setActiveTab('home')}
+            onLogout={handleLogout}
+          >
+            <OrderTrackingView
+              orders={orders}
+              onOpenChat={handleOpenChat}
+              onSubmitReview={handleSubmitReview}
+              onConfirmDelivery={handleConfirmOrderDelivery}
+              onUploadMilestonePhoto={handleUploadMilestonePhoto}
+              onRateMilestone={handleRateOrderMilestone}
+              onOpenFabricLibrary={() => setFabricLibraryOpen(true)}
+            />
+          </RequireRole>
         )}
 
         {activeTab === 'profile' && (
-          <CustomerProfileView
-            profile={{
-              ...customerProfile,
-              name: currentUser?.name || customerProfile.name,
-              email: currentUser?.email || customerProfile.email,
-              phone: currentUser?.phone || customerProfile.phone,
-              avatar: currentUser?.avatar || customerProfile.avatar
-            }}
-            measurements={measurements}
-            savedDesigns={designs}
-            orders={orders}
-            onOpenMeasurementsModal={() => setMeasurementsModalOpen(true)}
-            onNavigateToStudio={() => setActiveTab('generator')}
-            onNavigateToOrders={() => handleNavigateStorefrontTab('orders')}
-          />
+          <RequireRole
+            user={currentUser}
+            isLoading={isLoadingAuth}
+            allowedRoles={['CUSTOMER']}
+            unauthenticatedFallback={customerLoginFallback}
+            onReturnToStorefront={() => setActiveTab('home')}
+            onLogout={handleLogout}
+          >
+            <CustomerProfileView
+              profile={{
+                ...customerProfile,
+                name: currentUser?.name || customerProfile.name,
+                email: currentUser?.email || customerProfile.email,
+                phone: currentUser?.phone || customerProfile.phone,
+                avatar: currentUser?.avatar || customerProfile.avatar
+              }}
+              measurements={measurements}
+              savedDesigns={designs}
+              orders={orders}
+              onOpenMeasurementsModal={() => setMeasurementsModalOpen(true)}
+              onNavigateToStudio={() => setActiveTab('generator')}
+              onNavigateToOrders={() => handleNavigateStorefrontTab('orders')}
+            />
+          </RequireRole>
         )}
       </main>
 
-      {/* Consumer E-Commerce Footer (with subtle "Become a Designer / Sell With Us" & "Admin Portal" links) */}
+      {/* Consumer E-Commerce Footer */}
       <Footer
         onSelectCategory={handleSelectStorefrontCategory}
         onNavigateTab={handleNavigateStorefrontTab}
-        onOpenDesignerPortal={() => navigateToPortal('designer')}
-        onOpenAdminPortal={() => navigateToPortal('admin')}
+        onOpenDesignerPortal={() => navigateToPortal('designer', '/designer/login')}
+        onOpenAdminPortal={() => navigateToPortal('admin', '/admin/login')}
       />
 
       {/* Real-Time Milestone Push Notification Banner */}
@@ -1966,7 +2021,7 @@ export default function App() {
                 </span>
                 <button
                   onClick={() => {
-                    setActiveTab('orders');
+                    handleNavigateStorefrontTab('orders');
                     setActivePushBanner(null);
                   }}
                   className="px-2.5 py-1 rounded-full bg-[#8D2434] hover:bg-[#A62B3E] text-white text-[10px] font-semibold cursor-pointer transition-colors"
@@ -1986,12 +2041,6 @@ export default function App() {
         activeOrdersCount={orders.filter((o) => o.status !== 'DELIVERED').length}
       />
 
-      {/* Floating PWA Install & App Link Banner */}
-      <PWAInstallButton
-        variant="banner"
-        className="fixed bottom-20 lg:bottom-6 right-4 sm:right-6 z-40 max-w-sm"
-      />
-
       {/* Shopping Bag & Checkout Drawer */}
       <CartCheckoutModal
         isOpen={cartModalOpen}
@@ -2000,11 +2049,14 @@ export default function App() {
         onUpdateQuantity={handleUpdateCartQuantity}
         onUpdateSize={handleUpdateCartSize}
         onRemoveItem={handleRemoveCartItem}
-        onClearCart={() => setCartItems([])}
+        onClearCart={() => {
+          setCartItems([]);
+          void syncCustomerStateToServer(wishlistProductIds, []);
+        }}
         onCompleteCheckout={handleCompleteCartCheckout}
         onViewOrders={() => {
           setCartModalOpen(false);
-          setActiveTab('orders');
+          handleNavigateStorefrontTab('orders');
         }}
       />
 
@@ -2029,7 +2081,7 @@ export default function App() {
           setActiveTab('design-viewer');
           setSearchModalOpen(false);
         }}
-        onSelectCategory={(cat) => {
+        onSelectCategory={() => {
           setActiveTab('marketplace');
           setSearchModalOpen(false);
         }}
@@ -2094,18 +2146,19 @@ export default function App() {
         measurements={measurements}
       />
 
-      {/* Clean Customer Authentication Modal (Myntra-Style OTP & Email/Password) */}
+      {/* Customer Authentication Modal */}
       <AuthModal
         isOpen={customerAuthModalOpen}
         onClose={() => {
           pendingAuthActionRef.current = null;
+          pendingReturnTabRef.current = null;
           setCustomerAuthModalOpen(false);
         }}
         onLoginSuccess={handleLoginSuccess}
-        initialRole="customer"
+        initialRole="CUSTOMER"
         onSwitchToDesignerPortal={() => {
           setCustomerAuthModalOpen(false);
-          navigateToPortal('designer');
+          navigateToPortal('designer', '/designer/login');
         }}
       />
 
@@ -2115,7 +2168,19 @@ export default function App() {
         onClose={() => setProfileModalOpen(false)}
         currentUser={currentUser}
         user={currentUser}
-        onUpdateUser={(updated) => setCurrentUser(updated)}
+        onUpdateUser={async (updated) => {
+          try {
+            const res = await apiClient.updateCustomerProfile({
+              name: updated.name,
+              city: updated.city,
+              avatar: updated.avatar,
+              savedAddresses: updated.savedAddresses
+            });
+            setCurrentUser(res.user);
+          } catch {
+            setCurrentUser(updated);
+          }
+        }}
         onLogout={handleLogout}
         onSwitchUser={() => {
           setProfileModalOpen(false);
@@ -2143,7 +2208,7 @@ export default function App() {
         />
       )}
 
-      {/* Global Product Details View (Myntra / Amazon PDP Modal) */}
+      {/* Global Product Details View */}
       <ProductDetailModal
         product={selectedMarketplaceProduct}
         isOpen={Boolean(selectedMarketplaceProduct)}
@@ -2176,7 +2241,7 @@ export default function App() {
         }}
       />
 
-      {/* Global Shopping Action Toast Notification (Myntra / Amazon style) */}
+      {/* Global Shopping Action Toast Notification */}
       <ShoppingToast
         toast={shoppingToast}
         onClose={() => setShoppingToast(null)}

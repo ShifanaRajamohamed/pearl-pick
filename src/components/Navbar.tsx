@@ -15,7 +15,6 @@ import {
   X
 } from 'lucide-react';
 import { AuthUser } from '../types';
-import { PWAInstallButton } from './PWAInstallButton';
 
 export type StorefrontCategory = 'women' | 'men' | 'ethnic' | 'festive' | 'collections';
 
@@ -199,8 +198,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* RIGHT: MYNTRA-STYLE PROFILE, WISHLIST & SHOPPING BAG ICONS */}
         <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          {/* PWA WEB APP INSTALL LINK */}
-          <PWAInstallButton variant="pill" className="hidden sm:inline-flex" />
 
           {/* Mobile Search Icon */}
           <button
@@ -394,10 +391,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       Fabric Swatch Library
                     </button>
                   )}
-
-                  <div className="pt-1.5 border-t border-[#ECE6DE]">
-                    <PWAInstallButton variant="link" className="w-full px-2 py-1.5 font-medium" />
-                  </div>
                 </div>
 
                 {/* Logout Button (Only when authenticated) */}
@@ -508,10 +501,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Sparkles className="w-4 h-4 text-[#D4AF37]" />
             AI Dress Design Studio
           </button>
-
-          <div className="pt-2 border-t border-[#ECE6DE]">
-            <PWAInstallButton variant="pill" className="w-full justify-center py-2.5 text-xs font-bold" />
-          </div>
         </div>
       )}
     </header>
