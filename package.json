@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "PEARL_PICK_TEST=true node --import tsx --test tests/rbac.test.ts tests/dressStudio.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 tests/dressStudio.test.ts tests/rbac.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",

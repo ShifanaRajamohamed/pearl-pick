@@ -1,3 +1,12 @@
+/**
+ * Adapted in part from google-gemini/gemini-image-editing-nextjs-quickstart
+ * (https://github.com/google-gemini/gemini-image-editing-nextjs-quickstart)
+ * Copyright 2025 Google LLC
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ */
 import { GoogleGenAI } from '@google/genai';
 import {
   buildPhotographicPrompts,
@@ -74,10 +83,11 @@ export interface SingleViewGenerationResult {
 }
 
 // Supported Gemini image-generation models in priority order per official @google/genai documentation
+// and reference quickstart (https://github.com/google-gemini/gemini-image-editing-nextjs-quickstart)
 export const SUPPORTED_IMAGE_MODELS = [
-  'gemini-3.1-flash-lite-image',
-  'gemini-nano-banana-2.1',
-  'gemini-2.5-flash-image'
+  'gemini-2.0-flash-exp-image-generation',
+  'gemini-2.5-flash-image',
+  'gemini-2.0-flash-exp'
 ] as const;
 
 let cachedGenAIClient: GoogleGenAI | null = null;
@@ -268,6 +278,10 @@ export async function generateSingleRasterPhotograph(options: {
           parts
         },
         config: {
+          temperature: 1,
+          topP: 0.95,
+          topK: 40,
+          responseModalities: ['IMAGE', 'TEXT'],
           imageConfig: {
             aspectRatio
           }

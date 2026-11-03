@@ -491,7 +491,7 @@ export const GeneratedDesignViewer: React.FC<GeneratedDesignViewerProps> = ({
       };
 
       setCustomImages(nextCustomImages);
-      setImageModelUsed(data.modelUsed || data.model || 'gemini-3.1-flash-lite-image');
+      setImageModelUsed(data.modelUsed || data.model || 'gemini-2.0-flash-exp-image-generation');
       setImageGenerationStatus(
         `Generated photorealistic ${resolvedSpec.color} ${resolvedSpec.fabric} ${resolvedSpec.garmentType} views.`
       );

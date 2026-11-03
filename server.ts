@@ -680,7 +680,12 @@ async function startServer() {
   });
 }
 
-if (process.env.PEARL_PICK_TEST !== 'true') {
+const isTestEnvironment =
+  process.env.PEARL_PICK_TEST === 'true' ||
+  process.env.NODE_ENV === 'test' ||
+  process.execArgv.includes('--test');
+
+if (!isTestEnvironment) {
   startServer();
 }
 

@@ -292,7 +292,7 @@ describe('Pearl Pick AI Dress Studio - Photorealistic Generation & Prompt Priori
       4,
       'Should make 4 Gemini image generation calls (front, then back, side, detail)'
     );
-    assert.equal(recordedCalls[0].model, 'gemini-3.1-flash-lite-image');
+    assert.equal(recordedCalls[0].model, 'gemini-2.0-flash-exp-image-generation');
 
     const frontCallParts = recordedCalls[0].parts;
     assert.equal(
