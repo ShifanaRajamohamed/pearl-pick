@@ -11,20 +11,36 @@ export function usePWAInstall() {
   const [isIOS, setIsIOS] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
 
   useEffect(() => {
-    // Detect standalone mode (already installed)
+    // Detect standalone mode (already installed & running without browser chrome)
     const isStandalone =
       typeof window !== 'undefined' &&
       (window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as unknown as { standalone?: boolean }).standalone === true);
-    setIsInstalled(isStandalone);
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+        window.location.search.includes('source=pwa'));
+    setIsInstalled(Boolean(isStandalone));
 
     // Detect device & environment
     if (typeof window !== 'undefined') {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      setIsIOS(/iphone|ipad|ipod/.test(userAgent));
-      setIsAndroid(/android/i.test(userAgent));
+      const iosDetected = /iphone|ipad|ipod/.test(userAgent);
+      const androidDetected = /android/i.test(userAgent);
+      setIsIOS(iosDetected);
+      setIsAndroid(androidDetected);
+
+      // Check for in-app webviews (WhatsApp, Instagram, Facebook, Gmail, Slack, Telegram, etc.)
+      const inApp =
+        /instagram|fbav|fban|line|gsa|wv|micromessenger|tiktok|twitter|threads|snapchat|pinterest|linkedin/i.test(
+          userAgent
+        ) ||
+        (androidDetected && !/chrome\/[0-9]+/i.test(userAgent)) ||
+        (iosDetected && !/safari/i.test(userAgent));
+      setIsInAppBrowser(Boolean(inApp));
+
       try {
         setIsInIframe(window.self !== window.top);
       } catch {
@@ -33,6 +49,7 @@ export function usePWAInstall() {
     }
 
     const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent browser default mini-infobar
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
@@ -73,6 +90,7 @@ export function usePWAInstall() {
     isIOS,
     isAndroid,
     isInIframe,
+    isInAppBrowser,
     install,
   };
 }

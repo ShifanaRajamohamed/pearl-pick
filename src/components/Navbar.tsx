@@ -12,9 +12,11 @@ import {
   LogOut,
   ChevronRight,
   Menu,
-  X
+  X,
+  Smartphone
 } from 'lucide-react';
 import { AuthUser } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export type StorefrontCategory = 'women' | 'men' | 'ethnic' | 'festive' | 'collections';
 
@@ -197,7 +199,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* RIGHT: MYNTRA-STYLE PROFILE, WISHLIST & SHOPPING BAG ICONS */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* PWA Mobile App Link & Install Pill Button */}
+          <PWAInstallButton
+            variant="navbar"
+            showIconOnlyOnMobile
+            className="hidden sm:inline-flex"
+          />
 
           {/* Mobile Search Icon */}
           <button
@@ -391,6 +399,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                       Fabric Swatch Library
                     </button>
                   )}
+
+                  {/* PWA Mobile App Link */}
+                  <div className="pt-1.5 border-t border-[#ECE6DE]">
+                    <PWAInstallButton
+                      variant="link"
+                      className="w-full flex items-center gap-2 py-2 px-2 rounded-lg text-xs font-semibold text-[#8D2434] hover:bg-[#FBECEF] transition-colors"
+                    />
+                  </div>
                 </div>
 
                 {/* Logout Button (Only when authenticated) */}
@@ -501,6 +517,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Sparkles className="w-4 h-4 text-[#D4AF37]" />
             AI Dress Design Studio
           </button>
+
+          <div className="pt-2 border-t border-[#ECE6DE]">
+            <PWAInstallButton
+              variant="button"
+              className="w-full py-2.5 rounded-xl bg-[#FAF7F2] text-[#2D2825] border border-[#D5C7B8] text-xs font-bold"
+            />
+          </div>
         </div>
       )}
     </header>

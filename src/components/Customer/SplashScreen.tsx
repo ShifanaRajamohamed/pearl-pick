@@ -14,11 +14,13 @@ import {
   Flame,
   MapPin,
   Percent,
-  Award
+  Award,
+  Smartphone
 } from 'lucide-react';
 import { DressDesign, TailorProfile, MarketplaceProduct } from '../../types';
 import { StorefrontCategory } from '../Navbar';
 import { DesignerSpotlight } from './DesignerSpotlight';
+import { PWAInstallButton } from '../PWAInstallButton';
 
 interface SplashScreenProps {
   userName?: string;
@@ -436,6 +438,34 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           </div>
         </div>
       </section>
+
+      {/* PWA Mobile Link & Instant Installation Strip */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#2D2825] via-[#3E352F] to-[#2D2825] text-white p-4 sm:p-5 shadow-sm border border-[#D5C7B8]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0 shadow-inner">
+            <Smartphone className="w-5 h-5 text-[#D4AF37]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-serif text-sm sm:text-base font-bold text-white truncate">
+                Install PEARL PICK on Your Mobile Phone
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-[#8D2434] text-[#FAF7F2] text-[9px] font-bold uppercase tracking-wider">
+                PWA
+              </span>
+            </div>
+            <p className="text-xs text-[#E4D9D1] font-light truncate mt-0.5">
+              Scan QR code or copy direct PWA link for full-screen offline experience on iOS & Android.
+            </p>
+          </div>
+        </div>
+        <div className="shrink-0 flex items-center gap-2 w-full sm:w-auto">
+          <PWAInstallButton
+            variant="button"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#8D2434] hover:bg-[#A1293B] text-white font-bold text-xs shadow-md"
+          />
+        </div>
+      </div>
 
       {/* 2. SHOP BY CATEGORY (WOMEN, MEN, ETHNIC, FESTIVE, COLLECTIONS) */}
       <section className="space-y-5">

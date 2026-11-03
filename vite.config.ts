@@ -15,8 +15,8 @@ export default defineConfig(() => {
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: false, // Using public/manifest.json for fine-grained Android PWA attributes
         devOptions: {
-          enabled: false,
-          type: 'module',
+          enabled: true,
+          type: 'classic',
         },
       }),
     ],

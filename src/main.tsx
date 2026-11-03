@@ -4,12 +4,11 @@ import App from './App.tsx';
 import './index.css';
 // Register PWA Service Worker for offline support and Android installability
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  const registerSW = () => {
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
       .then((registration) => {
         console.log('[PWA] Service Worker registered successfully with scope:', registration.scope);
-        // Check for updates periodically
         registration.onupdatefound = () => {
           const installingWorker = registration.installing;
           if (installingWorker) {
@@ -28,7 +27,15 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       .catch((err) => {
         console.warn('[PWA] Service Worker registration notice:', err);
       });
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    registerSW();
+  } else {
+    window.addEventListener('load', registerSW);
+    // Also trigger immediately to catch beforeinstallprompt early
+    registerSW();
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

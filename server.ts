@@ -655,6 +655,24 @@ app.post('/api/gemini/generate-dress', async (req, res) => {
 // Mount centralized RBAC API Router
 app.use('/api', createApiRouter());
 
+// Explicit PWA Endpoints with CORS and Credential Headers for Android WebAPK & iOS standalone reliability
+app.get('/manifest.json', (_req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(process.cwd(), 'public', 'manifest.json'));
+});
+
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  res.sendFile(path.join(process.cwd(), 'public', 'sw.js'));
+});
+
 async function startServer() {
   const httpServer = http.createServer(app);
 

@@ -1,6 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Scissors, Sparkles, Lock, Truck, Award } from 'lucide-react';
+import { ShieldCheck, Scissors, Sparkles, Lock, Truck, Award, Smartphone } from 'lucide-react';
 import { StorefrontCategory } from './Navbar';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface FooterProps {
   onSelectCategory: (cat: StorefrontCategory) => void;
@@ -218,16 +219,21 @@ export const Footer: React.FC<FooterProps> = ({
           <p className="text-xs text-[#6E6359] leading-relaxed mb-4">
             India&apos;s premier bespoke fashion destination uniting ready-to-wear designer collections with AI-powered custom tailoring.
           </p>
-          <div className="pt-2 border-t border-[#ECE6DE]">
-            <button
-              id="footer-admin-portal-link"
-              type="button"
-              onClick={onOpenAdminPortal}
-              className="inline-flex items-center gap-1.5 text-[11px] text-[#7D726A] hover:text-[#2D2825] transition-colors cursor-pointer"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#7D726A]" />
-              <span>Admin Governance Portal (/admin/login)</span>
-            </button>
+          <div className="space-y-2 pt-2 border-t border-[#ECE6DE]">
+            <div>
+              <PWAInstallButton variant="link" />
+            </div>
+            <div>
+              <button
+                id="footer-admin-portal-link"
+                type="button"
+                onClick={onOpenAdminPortal}
+                className="inline-flex items-center gap-1.5 text-[11px] text-[#7D726A] hover:text-[#2D2825] transition-colors cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#7D726A]" />
+                <span>Admin Governance Portal (/admin/login)</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
